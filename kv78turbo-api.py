@@ -147,10 +147,10 @@ def storecurrect(row):
     	                
     if row['TimingPointCode'] not in tpc_meta:
     	    cur = conn.cursor()
-    	    cur.execute("SELECT timingpointname, timingpointtown, stopareacode, locationx_ew, locationy_ns FROM timingpoint WHERE timingpointcode = %s LIMIT 1", [row['TimingPointCode']])
+    	    cur.execute("select timingpointname,timingpointtown,stopareacode,CAST(ST_Y(the_geom) AS NUMERIC(9,7)) AS lat,CAST(ST_X(the_geom) AS NUMERIC(8,7)) AS lon FROM (select distinct t.timingpointcode as timingpointcode, t.timingpointname as timingpointname, t.timingpointtown as timingpointtown,t.stopareacode as stopareacode,ST_Transform(st_setsrid(st_makepoint(locationx_ew, locationy_ns), 28992), 4326) AS the_geom from timingpoint as t WHERE timingpointcode = %s) AS W LIMIT 1;", [row['TimingPointCode']])
     	    kv7rows = cur.fetchall()
     	    for kv7row in kv7rows:
-    	    	    tpc_meta[row['TimingPointCode']] = {'TimingPointName' : kv7row[0], 'TimingPointTown' : kv7row[1], 'StopAreaCode' : kv7row[2], 'X' : kv7row[3], 'Y' : kv7row[4]} 
+    	    	    tpc_meta[row['TimingPointCode']] = {'TimingPointName' : kv7row[0], 'TimingPointTown' : kv7row[1], 'StopAreaCode' : kv7row[2], 'latitude' : kv7row[3], 'longitude' : kv7row[4]} 
             
     try:
         for x in ['JourneyNumber', 'FortifyOrderNumber', 'UserStopOrderNumber', 'NumberOfCoaches']:
