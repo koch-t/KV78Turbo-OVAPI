@@ -8,7 +8,7 @@ def notfound(start_response):
     start_response('404 File Not Found', COMMON_HEADERS + [('Content-length', '2')])
     yield '[]'
 
-def KV78Demo(environ, start_response):
+def KV78Client(environ, start_response):
     url = environ['PATH_INFO'][1:]
     if len(url) > 0 and url[-1] == '/':
         url = url[:-1]
@@ -22,10 +22,10 @@ def KV78Demo(environ, start_response):
     client.connect(ZMQ_KV78UWSGI)
     client.send(url)
     reply = client.recv()
-    if len(reply) == 0:
+    if len(reply) < 3:
         return notfound(start_response)
         
     start_response('200 OK', COMMON_HEADERS + [('Content-length', str(len(reply)))])
     return reply
 
-uwsgi.applications = {'': KV78Demo}
+uwsgi.applications = {'': KV78Client}
