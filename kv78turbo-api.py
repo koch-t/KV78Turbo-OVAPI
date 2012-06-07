@@ -64,8 +64,8 @@ def cleanup():
     	    	    	    	    del(journey_store[journey_id])
     	    	    	    if journey_id in kv7cache:
     	    	    	    	    del(kv7cache[journey_id])
-    	    	    	    	    sys.stdout.write('X')
-    	    	    	    	    sys.stdout.flush()
+    	    	    	    	    #sys.stdout.write('X')
+    	    	    	    	    #sys.stdout.flush()
 
 def fetchkv7(row):
 	id = '_'.join([row['DataOwnerCode'], row['LocalServiceLevelCode'], row['LinePlanningNumber'], row['JourneyNumber'], row['FortifyOrderNumber']])
@@ -99,7 +99,7 @@ def fetchkv7(row):
 				kv7cache[id][pass_id] = {}
 			else:
 				kv7cache[id] = {pass_id : {}}
-			print 'Missing from KV7' + id + '_' + pass_id
+			print 'Missing from KV7 ' + id + '_' + pass_id + ' Subscription ' + row['Subscription']
 		for kv7row in kv7rows:
 			if id not in kv7cache:
 				kv7cache[id] = {pass_id : {'TargetArrivalTime' : toisotime(row['OperationDate'], kv7row[0], row)}}
@@ -139,8 +139,8 @@ def storecurrect(row):
         
     if id not in kv7cache or pass_id not in kv7cache[id]:
     	    fetchkv7(row)
-    	    sys.stdout.write('M') #debug for detecting missing KV7 packages
-    	    sys.stdout.flush()
+    	    #sys.stdout.write('M') #debug for detecting missing KV7 packages
+    	    #sys.stdout.flush()
     # not elif because we want to wait for the fetch from the database
     if id in kv7cache and pass_id in kv7cache[id]:
     	    row.update(kv7cache[id][pass_id])
@@ -150,7 +150,7 @@ def storecurrect(row):
     	    cur.execute("select timingpointname,timingpointtown,stopareacode,CAST(ST_Y(the_geom) AS NUMERIC(9,7)) AS lat,CAST(ST_X(the_geom) AS NUMERIC(8,7)) AS lon FROM (select distinct t.timingpointcode as timingpointcode, t.timingpointname as timingpointname, t.timingpointtown as timingpointtown,t.stopareacode as stopareacode,ST_Transform(st_setsrid(st_makepoint(locationx_ew, locationy_ns), 28992), 4326) AS the_geom from timingpoint as t WHERE timingpointcode = %s) AS W LIMIT 1;", [row['TimingPointCode']])
     	    kv7rows = cur.fetchall()
     	    for kv7row in kv7rows:
-    	    	    tpc_meta[row['TimingPointCode']] = {'TimingPointName' : kv7row[0], 'TimingPointTown' : kv7row[1], 'StopAreaCode' : kv7row[2], 'latitude' : kv7row[3], 'longitude' : kv7row[4]} 
+    	    	    tpc_meta[row['TimingPointCode']] = {'TimingPointName' : kv7row[0], 'TimingPointTown' : kv7row[1], 'StopAreaCode' : kv7row[2], 'Latitude' : kv7row[3], 'Longitude' : kv7row[4]} 
             
     try:
         for x in ['JourneyNumber', 'FortifyOrderNumber', 'UserStopOrderNumber', 'NumberOfCoaches']:
@@ -290,8 +290,10 @@ while True:
         multipart = kv8.recv_multipart()
         content = GzipFile('','r',0,StringIO(''.join(multipart[1:]))).read()
         c = ctx(content)
+        subscription =  c.ctx['Subscription']
         if 'DATEDPASSTIME' in c.ctx:
             for row in c.ctx['DATEDPASSTIME'].rows():
+                    row['Subscription'] = subscription
             	    storecurrect(row)
         if 'GENERALMESSAGEUPDATE' in c.ctx:
             sys.stdout.write('MSGUPDATE')
@@ -381,8 +383,8 @@ while True:
 
     if garbage > 120:
         cleanup()
-        sys.stdout.write('c')
-        sys.stdout.flush()
+        #sys.stdout.write('c')
+        #sys.stdout.flush()
         garbage = 0
     else:
         garbage += 1

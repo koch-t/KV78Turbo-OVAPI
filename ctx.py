@@ -79,6 +79,7 @@ class ctx:
                 # control characters
                 if line[1] == 'G':
                     Label, Name, Comment, Path, Endian, Enc, Res1, TimeStamp, _ = line[2:].split('|')
+                    self.ctx['Subscription'] = Comment
                 elif line[1] == 'T':
                     tmp = ctxtable(*line[2:].split('|'))
                     tLabel = tmp.Label
