@@ -12,7 +12,7 @@ from const import ZMQ_KV7
 from twisted.internet import task
 from twisted.internet import reactor
 
-conn = psycopg2.connect("dbname='kv78turbo' user='postgres'")
+conn = psycopg2.connect("dbname='kv78turbo' user='postgres' port='5433'")
 
 sys.stderr.write('Setting up a ZeroMQ PUSH: %s\n' % (ZMQ_KV7))
 context = zmq.Context()
@@ -53,7 +53,7 @@ def fetchandpushkv7():
 	sys.stdout.write(' ')
 	sys.stdout.write(startrange48 + '-' + endrange48 + '\n')
 	cur = conn.cursor()
-	cur.execute("SELECT p.dataownercode,p.localservicelevelcode,p.lineplanningnumber,journeynumber,fortifyordernumber,p.userstopcode,userstopordernumber,linedirection,p.destinationcode,targetarrivaltime,targetdeparturetime,sidecode,wheelchairaccessible,journeystoptype,istimingstop,productformulatype,destinationname50,timingpointcode, timingpointdataownercode,operationdate,linename,transporttype,linepublicnumber FROM localservicegrouppasstime  AS ""p"", destination AS ""d"", usertimingpoint as ""u"", localservicegroupvalidity as ""v"", line as ""l"" WHERE p.dataownercode = l.dataownercode AND p.lineplanningnumber = l.lineplanningnumber AND journeystoptype != 'INFOPOINT' AND p.dataownercode = u.dataownercode AND p.userstopcode =  u.userstopcode AND ((operationdate = date %s AND targetarrivaltime >= %s AND targetarrivaltime < %s) OR (operationdate = date %s - interval '1 day' AND targetarrivaltime >= %s AND targetarrivaltime < %s))  AND p.localservicelevelcode = v.localservicelevelcode AND p.dataownercode = v.dataownercode AND p.destinationcode = d.destinationcode;", [startdate, startrange,endrange,startdate,startrange48,endrange48])
+	cur.execute("select p.dataownercode,p.localservicelevelcode,p.lineplanningnumber,journeynumber,fortifyordernumber,p.userstopcode,userstopordernumber,linedirection,p.destinationcode,targetarrivaltime,targetdeparturetime,sidecode,wheelchairaccessible,journeystoptype,istimingstop,productformulatype,timingpointcode, timingpointdataownercode,operationdate from localservicegrouppasstime as p,  usertimingpoint as u, localservicegroupvalidity as v where exists ( SELECT 1 FROM localservicegrouppasstime  AS f, localservicegroupvalidity as v WHERE f.journeystoptype = 'FIRST' AND f.dataownercode = p.dataownercode AND f.localservicelevelcode = p.localservicelevelcode AND f.lineplanningnumber = p.lineplanningnumber and f.journeynumber = p.journeynumber AND f.fortifyordernumber = p.fortifyordernumber AND ((operationdate = date %s AND targetarrivaltime >= %s AND targetarrivaltime < %s ) OR (operationdate = date %s - interval '1 day' AND targetarrivaltime >= %s AND targetarrivaltime < %s)) AND f.localservicelevelcode = v.localservicelevelcode AND f.dataownercode = v.dataownercode) AND p.dataownercode = u.dataownercode AND p.userstopcode =  u.userstopcode AND journeystoptype != 'INFOPOINT' AND p.localservicelevelcode = v.localservicelevelcode AND p.dataownercode = v.dataownercode;", [startdate, startrange,endrange,startdate,startrange48,endrange48])
 	kv7rows = cur.fetchall()
 	passes = {}
 	print str(len(kv7rows)) + ' rows from db'
@@ -82,13 +82,9 @@ def fetchandpushkv7():
 		row['JourneyStopType'] = kv7row[13]
 		row['IsTimingStop'] = kv7row[14]
 		row['ProductFormulaType'] = kv7row[15]
-		row['DestinationName50'] = kv7row[16]
-		row['TimingPointCode'] = kv7row[17]
-		row['TimingPointDataOwnerCode'] = kv7row[18]
-		row['OperationDate'] = kv7row[19].strftime("%Y-%m-%d")
-		row['LineName'] = kv7row[20]
-		row['TransportType'] = kv7row[21]
-		row['LinePublicNumber'] = kv7row[22]
+		row['TimingPointCode'] = kv7row[16]
+		row['TimingPointDataOwnerCode'] = kv7row[17]
+		row['OperationDate'] = kv7row[18].strftime("%Y-%m-%d")
 		row['TripStopStatus'] = 'PLANNED'
 		pass_id = '_'.join([row['DataOwnerCode'], row['LocalServiceLevelCode'], row['LinePlanningNumber'], row['JourneyNumber'], row['FortifyOrderNumber'], row['UserStopCode'], row['UserStopOrderNumber']])
 		passes[pass_id] = row

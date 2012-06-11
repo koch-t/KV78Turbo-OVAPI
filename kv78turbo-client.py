@@ -12,7 +12,7 @@ def KV78Client(environ, start_response):
     url = environ['PATH_INFO'][1:]
     if len(url) > 0 and url[-1] == '/':
         url = url[:-1]
-        
+   
     arguments = url.split('/')
     if arguments[0] not in set(['tpc', 'journey', 'line', 'stopareacode', 'lastupdate', 'generalmessage']) or len(arguments) > 2:
          return notfound(start_response)

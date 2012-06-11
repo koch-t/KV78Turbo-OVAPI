@@ -12,7 +12,7 @@ import psycopg2
 import copy
 import smtplib
 
-conn = psycopg2.connect("dbname='kv78turbo' user='postgres'")
+conn = psycopg2.connect("dbname='kv78turbo' user='postgres' port='5433'")
 
 tpc_store = {}
 stopareacode_store = {}
@@ -25,6 +25,20 @@ tpc_meta = {}
 line_meta = {}
 destination_meta = {}
 kv7cache = {}
+
+cur = conn.cursor()
+cur.execute("SELECT dataownercode,lineplanningnumber,linepublicnumber,linename,transporttype from line", [])
+rows = cur.fetchall()
+for row in rows:
+    line_id = row[0] + '_' + row[1]
+    line_meta[line_id] = {'LinePublicNumber' : row[2], 'LineName' : row[3], 'TransportType' : row[4]}
+
+cur = conn.cursor()
+cur.execute("SELECT dataownercode,destinationcode,destinationname50 from destination", [])
+rows = cur.fetchall()
+for row in rows:
+    destination_id = row[0] + '_' + row[1]
+    destination_meta[destination_id] = row[2]
 
 def toisotime(operationdate, timestamp, row):
     hours, minutes, seconds = timestamp.split(':')
@@ -71,29 +85,21 @@ def fetchkv7(row):
 	id = '_'.join([row['DataOwnerCode'], row['LocalServiceLevelCode'], row['LinePlanningNumber'], row['JourneyNumber'], row['FortifyOrderNumber']])
 	if row['UserStopOrderNumber'] == '1' and row['TripStopStatus'] != 'PASSED':
 		cur = conn.cursor()
-		cur.execute("SELECT userstopordernumber, targetarrivaltime, targetdeparturetime, productformulatype, destinationname50, linename, linepublicnumber, transporttype from localservicegrouppasstime as ""p"", destination as ""d"", line as ""l"" WHERE p.dataownercode = %s and localservicelevelcode = %s and journeynumber = %s and fortifyordernumber = %s and p.lineplanningnumber = %s and userstopcode = %s AND p.dataownercode = d.dataownercode AND p.destinationcode = d.destinationcode AND p.dataownercode = l.dataownercode AND p.lineplanningnumber = l.lineplanningnumber LIMIT 1;", [row['DataOwnerCode'],row['LocalServiceLevelCode'], row['JourneyNumber'], row['FortifyOrderNumber'], row['LinePlanningNumber'], row['UserStopCode']])
+		cur.execute("SELECT userstopordernumber, targetarrivaltime, targetdeparturetime, productformulatype from localservicegrouppasstime as ""p"" WHERE p.dataownercode = %s and localservicelevelcode = %s and journeynumber = %s and fortifyordernumber = %s and p.lineplanningnumber = %s and userstopcode = %s LIMIT 1;", [row['DataOwnerCode'],row['LocalServiceLevelCode'], row['JourneyNumber'], row['FortifyOrderNumber'], row['LinePlanningNumber'], row['UserStopCode']])
 		kv7rows = cur.fetchall()
 		for kv7row in kv7rows:
 			pass_id = '_'.join([row['UserStopCode'], str(kv7row[0])])
-			linemeta_id = row['DataOwnerCode'] + '_' + row['LinePlanningNumber']
-			destinationmeta_id = row['DataOwnerCode'] + '_' + row['DestinationCode']
 			if id not in kv7cache:
 				kv7cache[id] = {pass_id : {'TargetArrivalTime' : toisotime(row['OperationDate'], kv7row[1], row)}}
 			else:
 				kv7cache[id][pass_id] = {'TargetArrivalTime' : toisotime(row['OperationDate'], kv7row[1], row)}
 			kv7cache[id][pass_id]['TargetDepartureTime'] = toisotime(row['OperationDate'], kv7row[2], row)
 			kv7cache[id][pass_id]['ProductFormulaType'] = kv7row[3]
-			if destinationmeta_id not in destination_meta:
-				destination_meta[destinationmeta_id] = kv7row[4]
-			if linemeta_id not in line_meta:
-				line_meta[linemeta_id] = { 'LineName' : kv7row[5], 'LinePublicNumber' : kv7row[6], 'TransportType' : kv7row[7], 'DataOwnerCode' : row['DataOwnerCode'], 'LinePlanningNumber' : row['LinePlanningNumber']}
 	else:
 		cur = conn.cursor()
-		cur.execute("SELECT targetarrivaltime, targetdeparturetime, productformulatype, destinationname50, linename, linepublicnumber, transporttype from localservicegrouppasstime as ""p"", destination as ""d"", line as ""l"" WHERE p.dataownercode = %s and localservicelevelcode = %s and journeynumber = %s and fortifyordernumber = %s and p.lineplanningnumber = %s and userstopcode = %s and userstopordernumber = %s AND p.dataownercode = d.dataownercode AND p.destinationcode = d.destinationcode AND p.dataownercode = l.dataownercode AND p.lineplanningnumber = l.lineplanningnumber LIMIT 1;", [row['DataOwnerCode'],row['LocalServiceLevelCode'], row['JourneyNumber'], row['FortifyOrderNumber'], row['LinePlanningNumber'], row['UserStopCode'], row['UserStopOrderNumber']])
+		cur.execute("SELECT targetarrivaltime, targetdeparturetime, productformulatype from localservicegrouppasstime as ""p"" WHERE p.dataownercode = %s and localservicelevelcode = %s and journeynumber = %s and fortifyordernumber = %s and p.lineplanningnumber = %s and userstopcode = %s and userstopordernumber = %s LIMIT 1;", [row['DataOwnerCode'],row['LocalServiceLevelCode'], row['JourneyNumber'], row['FortifyOrderNumber'], row['LinePlanningNumber'], row['UserStopCode'], row['UserStopOrderNumber']])
 		kv7rows = cur.fetchall()
 		pass_id = '_'.join([row['UserStopCode'], row['UserStopOrderNumber']])
-		linemeta_id = row['DataOwnerCode'] + '_' + row['LinePlanningNumber']
-		destinationmeta_id = row['DataOwnerCode'] + '_' + row['DestinationCode']
 		if len(kv7rows) == 0:
 			if id in kv7cache:
 				kv7cache[id][pass_id] = {}
@@ -107,10 +113,6 @@ def fetchkv7(row):
 				kv7cache[id][pass_id] = {'TargetArrivalTime' : toisotime(row['OperationDate'], kv7row[0], row)}
 			kv7cache[id][pass_id]['TargetDepartureTime'] = toisotime(row['OperationDate'], kv7row[1], row)
 			kv7cache[id][pass_id]['ProductFormulaType'] = kv7row[2]
-			if destinationmeta_id not in destination_meta:
-				destination_meta[destinationmeta_id] = kv7row[3]
-			if linemeta_id not in line_meta:
-		        	line_meta[linemeta_id] = { 'LineName' : kv7row[4], 'LinePublicNumber' : kv7row[5], 'TransportType' : kv7row[6] , 'DataOwnerCode' : row['DataOwnerCode'], 'LinePlanningNumber' : row['LinePlanningNumber']}
 	
 def storecurrect(row): 	    
     if row['TripStopStatus'] != 'UNKNOWN' and row['TripStopStatus'] != 'PLANNED': #Keeps status of the dataowners supplying us data
@@ -229,6 +231,24 @@ def storecurrect(row):
     	line_store[line_id]['Actuals'][id] = row
     elif (row['TripStopStatus'] == 'UNKNOWN' or row['TripStopStatus'] == 'CANCEL') and id in line_store[line_id]['Actuals']: #Delete canceled or non live journeys
 	del(line_store[line_id]['Actuals'][id])
+    if row['SideCode'] == '-':
+	del(row['SideCode'])
+    if 'MessageContent' in row and row['MessageContent'] == None:
+        del(row['MessageContent'])
+    if 'SubReasonType' in row and row['SubReasonType'] == None:
+        del(row['SubReasonType'])
+    if 'ReasonType' in row and row['ReasonType'] == None:
+        del(row['ReasonType'])
+    if 'AdviceType' in row and row['AdviceType'] == None:
+        del(row['AdviceType'])
+    if 'AdviceContent' in row and row['AdviceContent'] == None:
+        del(row['AdviceContent'])
+    if 'SubAdviceType' in row and row['SubAdviceType'] == None:
+        del(row['SubAdviceType'])
+    if 'MessageType' in row and row['MessageType'] == None:
+        del(row['MessageType'])
+    if 'ReasonContent' in row and row['ReasonContent'] == None:
+        del(row['ReasonContent'])
             
 def storeplanned(row):
 	linemeta_id = row['DataOwnerCode'] + '_' + row['LinePlanningNumber']
@@ -243,10 +263,6 @@ def storeplanned(row):
 			kv7cache[id][pass_id] = {'TargetArrivalTime' : toisotime(row['OperationDate'], row['TargetArrivalTime'], row)}
 		kv7cache[id][pass_id]['TargetDepartureTime'] = toisotime(row['OperationDate'], row['TargetDepartureTime'], row)
 		kv7cache[id][pass_id]['ProductFormulaType'] = row['ProductFormulaType']
-		if destinationmeta_id not in destination_meta:
-			destination_meta[destinationmeta_id] = row['DestinationName50']
-		if linemeta_id not in line_meta:
-			line_meta[linemeta_id] = { 'LineName' : row['LineName'], 'LinePublicNumber' : row['LinePublicNumber'], 'TransportType' : row['TransportType'], 'DataOwnerCode' : row['DataOwnerCode'], 'LinePlanningNumber' : row['LinePlanningNumber']}
         	storecurrect(row)
         	
 def storemessage(row):
