@@ -1,0 +1,6 @@
+cs > centraal station
+ns > station
+busst. > busstation
+Den Bosch > 's-Hertogenbosch
+burg. > burgemeester
+pr. > prins
