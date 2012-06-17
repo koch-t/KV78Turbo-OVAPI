@@ -83,7 +83,7 @@ class ctx:
                 elif line[1] == 'T':
                     tmp = ctxtable(*line[2:].split('|'))
                     tLabel = tmp.Label
-                    self.ctx[tLabel] = tmp
+                    self.ctx[intern(tLabel)] = tmp
                 elif line[1] == 'L':
                     self.ctx[tLabel].set_fieldlabels(line[2:].split('|'))
 

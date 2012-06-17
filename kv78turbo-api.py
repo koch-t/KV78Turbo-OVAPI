@@ -7,12 +7,9 @@ from datetime import datetime, timedelta
 from time import strftime, gmtime
 from gzip import GzipFile
 from cStringIO import StringIO
-from email.mime.text import MIMEText
 import psycopg2
-import copy
-import smtplib
 
-conn = psycopg2.connect("dbname='kv78turbo' user='postgres' port='5433'")
+conn = psycopg2.connect("dbname='kv78turbo1' user='postgres' port='5433'")
 
 tpc_store = {}
 stopareacode_store = {}
@@ -30,15 +27,27 @@ cur = conn.cursor()
 cur.execute("SELECT dataownercode,lineplanningnumber,linepublicnumber,linename,transporttype from line", [])
 rows = cur.fetchall()
 for row in rows:
-    line_id = row[0] + '_' + row[1]
-    line_meta[line_id] = {'LinePublicNumber' : row[2], 'LineName' : row[3], 'TransportType' : row[4]}
+    line_id = intern(row[0] + '_' + row[1])
+    line_meta[line_id] = {'LinePublicNumber' : intern(row[2]), 'LineName' : intern(row[3]), 'TransportType' : intern(row[4])}
+cur.close()
 
 cur = conn.cursor()
 cur.execute("SELECT dataownercode,destinationcode,destinationname50 from destination", [])
 rows = cur.fetchall()
 for row in rows:
-    destination_id = row[0] + '_' + row[1]
-    destination_meta[destination_id] = row[2]
+    destination_id = intern(row[0] + '_' + row[1])
+    destination_meta[destination_id] = intern(row[2])
+cur.close()
+
+cur = conn.cursor()
+cur.execute("select timingpointcode,timingpointname,timingpointtown,stopareacode,CAST(ST_Y(the_geom) AS NUMERIC(9,7)) AS lat,CAST(ST_X(the_geom) AS NUMERIC(8,7)) AS lon FROM (select distinct t.timingpointcode as timingpointcode, t.timingpointname as timingpointname, t.timingpointtown as timingpointtown,t.stopareacode as stopareacode,ST_Transform(st_setsrid(st_makepoint(locationx_ew, locationy_ns), 28992), 4326) AS the_geom from timingpoint as t where not exists (select 1 from usertimingpoint,localservicegrouppasstime where t.timingpointcode = usertimingpoint.timingpointcode and journeystoptype = 'INFOPOINT' and usertimingpoint.dataownercode = localservicegrouppasstime.dataownercode and usertimingpoint.userstopcode = localservicegrouppasstime.userstopcode)) as W;",[])
+kv7rows = cur.fetchall()
+for kv7row in kv7rows:
+    tpc_meta[intern(kv7row[0])] = {'TimingPointName' : kv7row[1], 'TimingPointTown' : kv7row[2], 'StopAreaCode' : kv7row[3], 'Latitude' : kv7row[4], 'Longitude' : kv7row[5]} 
+    if kv7row[2] == None:
+       del(tpc_meta[row['TimingPointCode']]['StopAreaCode'])
+cur.close()
+conn.close()
 
 def toisotime(operationdate, timestamp, row):
     hours, minutes, seconds = timestamp.split(':')
@@ -82,6 +91,7 @@ def cleanup():
     	    	    	    	    #sys.stdout.flush()
 
 def fetchkv7(row):
+        conn = psycopg2.connect("dbname='kv78turbo1' user='postgres' port='5433'")
 	id = '_'.join([row['DataOwnerCode'], row['LocalServiceLevelCode'], row['LinePlanningNumber'], row['JourneyNumber'], row['FortifyOrderNumber']])
 	if row['UserStopOrderNumber'] == '1' and row['TripStopStatus'] != 'PASSED':
 		cur = conn.cursor()
@@ -95,7 +105,8 @@ def fetchkv7(row):
 				kv7cache[id][pass_id] = {'TargetArrivalTime' : toisotime(row['OperationDate'], kv7row[1], row)}
 			kv7cache[id][pass_id]['TargetDepartureTime'] = toisotime(row['OperationDate'], kv7row[2], row)
 			kv7cache[id][pass_id]['ProductFormulaType'] = kv7row[3]
-	else:
+                cur.close()	
+        else:
 		cur = conn.cursor()
 		cur.execute("SELECT targetarrivaltime, targetdeparturetime, productformulatype from localservicegrouppasstime as ""p"" WHERE p.dataownercode = %s and localservicelevelcode = %s and journeynumber = %s and fortifyordernumber = %s and p.lineplanningnumber = %s and userstopcode = %s and userstopordernumber = %s LIMIT 1;", [row['DataOwnerCode'],row['LocalServiceLevelCode'], row['JourneyNumber'], row['FortifyOrderNumber'], row['LinePlanningNumber'], row['UserStopCode'], row['UserStopOrderNumber']])
 		kv7rows = cur.fetchall()
@@ -113,7 +124,9 @@ def fetchkv7(row):
 				kv7cache[id][pass_id] = {'TargetArrivalTime' : toisotime(row['OperationDate'], kv7row[0], row)}
 			kv7cache[id][pass_id]['TargetDepartureTime'] = toisotime(row['OperationDate'], kv7row[1], row)
 			kv7cache[id][pass_id]['ProductFormulaType'] = kv7row[2]
-	
+                cur.close()
+        conn.close()
+
 def storecurrect(row): 	    
     if row['TripStopStatus'] != 'UNKNOWN' and row['TripStopStatus'] != 'PLANNED': #Keeps status of the dataowners supplying us data
             last_updatedataownerstore[row['DataOwnerCode']] = row['LastUpdateTimeStamp']
@@ -128,40 +141,35 @@ def storecurrect(row):
     	    	    
     id = '_'.join([row['DataOwnerCode'], row['LocalServiceLevelCode'], row['LinePlanningNumber'], row['JourneyNumber'], row['FortifyOrderNumber']])
     line_id = row['DataOwnerCode'] + '_' + row['LinePlanningNumber'] + '_' + row['LineDirection']
-    pass_id = '_'.join([row['DataOwnerCode'], row['LocalServiceLevelCode'], row['LinePlanningNumber'], row['JourneyNumber'], row['FortifyOrderNumber'], row['UserStopCode'], row['UserStopOrderNumber']])
     linemeta_id = row['DataOwnerCode'] + '_' + row['LinePlanningNumber']
     destinationmeta_id = row['DataOwnerCode'] + '_' + row['DestinationCode']
     pass_id = '_'.join([row['UserStopCode'], row['UserStopOrderNumber']])
 
     if row['TripStopStatus'] == 'CANCEL': #debug for testing CANCELED passes
-    	    print 'CANCEL ' + id;
+    	    print 'CANCEL ' + id
+            print 'XCANCEL'+ row['LastUpdateTimeStamp'] + '  ' + row['ExpectedArrivalTime']
 
     row['ExpectedArrivalTime'] = toisotime(row['OperationDate'], row['ExpectedArrivalTime'], row)
     row['ExpectedDepartureTime'] = toisotime(row['OperationDate'], row['ExpectedDepartureTime'], row)
         
-    if id not in kv7cache or pass_id not in kv7cache[id]:
-    	    fetchkv7(row)
+    if row['TripStopStatus'] == 'CANCEL' and (id not in kv7cache or pass_id not in kv7cache[id]):
+    	    fetchkv7(row) #fetch KV7 as CANCEL message may be too much ahead of the KV7 feed and thus are overwritten and we wish KV7 info for CANCEL's
     	    #sys.stdout.write('M') #debug for detecting missing KV7 packages
     	    #sys.stdout.flush()
     # not elif because we want to wait for the fetch from the database
     if id in kv7cache and pass_id in kv7cache[id]:
     	    row.update(kv7cache[id][pass_id])
-    	                
-    if row['TimingPointCode'] not in tpc_meta:
-    	    cur = conn.cursor()
-    	    cur.execute("select timingpointname,timingpointtown,stopareacode,CAST(ST_Y(the_geom) AS NUMERIC(9,7)) AS lat,CAST(ST_X(the_geom) AS NUMERIC(8,7)) AS lon FROM (select distinct t.timingpointcode as timingpointcode, t.timingpointname as timingpointname, t.timingpointtown as timingpointtown,t.stopareacode as stopareacode,ST_Transform(st_setsrid(st_makepoint(locationx_ew, locationy_ns), 28992), 4326) AS the_geom from timingpoint as t WHERE timingpointcode = %s) AS W LIMIT 1;", [row['TimingPointCode']])
-    	    kv7rows = cur.fetchall()
-    	    for kv7row in kv7rows:
-    	    	    tpc_meta[row['TimingPointCode']] = {'TimingPointName' : kv7row[0], 'TimingPointTown' : kv7row[1], 'StopAreaCode' : kv7row[2], 'Latitude' : kv7row[3], 'Longitude' : kv7row[4]} 
-            
+    	               
     try:
         for x in ['JourneyNumber', 'FortifyOrderNumber', 'UserStopOrderNumber', 'NumberOfCoaches']:
             if x in row and row[x] is not None and row[x] != 'UNKNOWN':
                 row[x] = int(row[x])
-
+            else:
+                del(row[x])       
         row['IsTimingStop'] = (row['IsTimingStop'] == '1')
     except:
-        raise
+        pass
+        #raise
     
     if row['TimingPointCode'] not in tpc_store:
     	    tpc_store[row['TimingPointCode']] = {'Passes' : {id: row}, 'GeneralMessages' : {}}
@@ -233,22 +241,6 @@ def storecurrect(row):
 	del(line_store[line_id]['Actuals'][id])
     if row['SideCode'] == '-':
 	del(row['SideCode'])
-    if 'MessageContent' in row and row['MessageContent'] == None:
-        del(row['MessageContent'])
-    if 'SubReasonType' in row and row['SubReasonType'] == None:
-        del(row['SubReasonType'])
-    if 'ReasonType' in row and row['ReasonType'] == None:
-        del(row['ReasonType'])
-    if 'AdviceType' in row and row['AdviceType'] == None:
-        del(row['AdviceType'])
-    if 'AdviceContent' in row and row['AdviceContent'] == None:
-        del(row['AdviceContent'])
-    if 'SubAdviceType' in row and row['SubAdviceType'] == None:
-        del(row['SubAdviceType'])
-    if 'MessageType' in row and row['MessageType'] == None:
-        del(row['MessageType'])
-    if 'ReasonContent' in row and row['ReasonContent'] == None:
-        del(row['ReasonContent'])
             
 def storeplanned(row):
 	linemeta_id = row['DataOwnerCode'] + '_' + row['LinePlanningNumber']
@@ -299,6 +291,7 @@ poller.register(kv7, zmq.POLLIN)
 
 garbage = 0
 
+
 while True:
     socks = dict(poller.poll())
     
@@ -306,11 +299,27 @@ while True:
         multipart = kv8.recv_multipart()
         content = GzipFile('','r',0,StringIO(''.join(multipart[1:]))).read()
         c = ctx(content)
-        subscription =  c.ctx['Subscription']
         if 'DATEDPASSTIME' in c.ctx:
             for row in c.ctx['DATEDPASSTIME'].rows():
-                    row['Subscription'] = subscription
-            	    storecurrect(row)
+                    if row['TripStopStatus'] == 'CANCEL':
+                        print content
+                    if row['MessageContent'] == None:
+                       	del(row['MessageContent'])
+                    if row['SubReasonType'] == None:
+                      	del(row['SubReasonType'])
+                    if row['ReasonType'] == None:
+                       	del(row['ReasonType'])
+                    if row['AdviceType'] == None:
+                      	del(row['AdviceType'])
+                    if row['AdviceContent'] == None:
+                      	del(row['AdviceContent'])
+                    if row['SubAdviceType'] == None:
+                       	del(row['SubAdviceType'])
+        	    if row['MessageType'] == None:
+        		del(row['MessageType'])
+        	    if row['ReasonContent'] == None:
+        		del(row['ReasonContent'])
+                    storecurrect(row)
         if 'GENERALMESSAGEUPDATE' in c.ctx:
             sys.stdout.write('MSGUPDATE')
             sys.stdout.flush()
@@ -330,7 +339,7 @@ while True:
     elif socks.get(client) == zmq.POLLIN:
         url = client.recv()
         arguments = url.split('/')
-
+        print url
         if arguments[0] == 'tpc':
             if len(arguments) == 1:
                 reply = {}
@@ -364,7 +373,8 @@ while True:
                 reply = {}
                 for stopareacode, values in stopareacode_store.items():
                 	for tpc, tpcvalues in stopareacode_store[stopareacode].items():
-                		reply[stopareacode] = tpc_meta[tpc]
+                                if tpc in tpc_meta:
+                		       reply[stopareacode] = tpc_meta[tpc]
                 client.send_json(reply)
             else:
                 reply = {}
