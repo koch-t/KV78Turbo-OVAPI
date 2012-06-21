@@ -116,7 +116,7 @@ def fetchkv7(row):
 				kv7cache[id][pass_id] = {}
 			else:
 				kv7cache[id] = {pass_id : {}}
-			print 'Missing from KV7 ' + id + '_' + pass_id + ' Subscription ' + row['Subscription']
+			print 'Missing from KV7 ' + id + '_' + pass_id# + ' Subscription ' + row['Subscription']
 		for kv7row in kv7rows:
 			if id not in kv7cache:
 				kv7cache[id] = {pass_id : {'TargetArrivalTime' : toisotime(row['OperationDate'], kv7row[0], row)}}
@@ -147,7 +147,7 @@ def storecurrect(row):
 
     if row['TripStopStatus'] == 'CANCEL': #debug for testing CANCELED passes
     	    print 'CANCEL ' + id
-            print 'XCANCEL'+ row['LastUpdateTimeStamp'] + '  ' + row['ExpectedArrivalTime']
+            print 'XCANCEL'+ row['LastUpdateTimeStamp'] + '  ' + row['ExpectedArrivalTime'] + ' ' + id + '_' + pass_id 
 
     row['ExpectedArrivalTime'] = toisotime(row['OperationDate'], row['ExpectedArrivalTime'], row)
     row['ExpectedDepartureTime'] = toisotime(row['OperationDate'], row['ExpectedDepartureTime'], row)
