@@ -57,7 +57,7 @@ class ctxtable:
             if x == '\\0':
                 tmp.append(None)
             else:
-                tmp.append(x)
+                tmp.append(intern(x))
              
         self.values.append(tmp)
 

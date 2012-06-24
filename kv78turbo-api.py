@@ -91,8 +91,11 @@ def cleanup():
     	    	    	    	    #sys.stdout.flush()
 
 def fetchkv7(row):
-        conn = psycopg2.connect("dbname='kv78turbo1' user='postgres' port='5433'")
-	id = '_'.join([row['DataOwnerCode'], row['LocalServiceLevelCode'], row['LinePlanningNumber'], row['JourneyNumber'], row['FortifyOrderNumber']])
+        try:
+                conn = psycopg2.connect("dbname='kv78turbo' user='postgres' port='5433'")
+	except:
+                conn = psycopg2.connect("dbname='kv78turbo1' user='postgres' port='5433'")
+        id = '_'.join([row['DataOwnerCode'], row['LocalServiceLevelCode'], row['LinePlanningNumber'], row['JourneyNumber'], row['FortifyOrderNumber']])
 	if row['UserStopOrderNumber'] == '1' and row['TripStopStatus'] != 'PASSED':
 		cur = conn.cursor()
 		cur.execute("SELECT userstopordernumber, targetarrivaltime, targetdeparturetime, productformulatype from localservicegrouppasstime as ""p"" WHERE p.dataownercode = %s and localservicelevelcode = %s and journeynumber = %s and fortifyordernumber = %s and p.lineplanningnumber = %s and userstopcode = %s LIMIT 1;", [row['DataOwnerCode'],row['LocalServiceLevelCode'], row['JourneyNumber'], row['FortifyOrderNumber'], row['LinePlanningNumber'], row['UserStopCode']])
@@ -132,13 +135,7 @@ def storecurrect(row):
             last_updatedataownerstore[row['DataOwnerCode']] = row['LastUpdateTimeStamp']
     elif row['DataOwnerCode'] not in last_updatedataownerstore:
             last_updatedataownerstore[row['DataOwnerCode']] = 'ERROR'
- 
-    if row['DataOwnerCode'] == 'EBS' and int(row['LineDirection']) == 0: #Hack for EBS, sigh...
-    	    if (int(row['JourneyNumber']) % 2 == 0):
-    	    	    row['LineDirection'] = '2'
-    	    else:
-    	    	    row['LineDirection'] = '1'
-    	    	    
+   	    	    
     id = '_'.join([row['DataOwnerCode'], row['LocalServiceLevelCode'], row['LinePlanningNumber'], row['JourneyNumber'], row['FortifyOrderNumber']])
     line_id = row['DataOwnerCode'] + '_' + row['LinePlanningNumber'] + '_' + row['LineDirection']
     linemeta_id = row['DataOwnerCode'] + '_' + row['LinePlanningNumber']
@@ -254,7 +251,20 @@ def storeplanned(row):
 		else:
 			kv7cache[id][pass_id] = {'TargetArrivalTime' : toisotime(row['OperationDate'], row['TargetArrivalTime'], row)}
 		kv7cache[id][pass_id]['TargetDepartureTime'] = toisotime(row['OperationDate'], row['TargetDepartureTime'], row)
-		kv7cache[id][pass_id]['ProductFormulaType'] = row['ProductFormulaType']
+		kv7cache[id][pass_id]['ProductFormulaType'] = int(row['ProductFormulaType'])
+                row['DataOwnerCode'] = intern(row['DataOwnerCode'])
+                row['LocalServiceLevelCode'] = intern(row['LocalServiceLevelCode'])
+                row['OperationDate'] = intern(row['OperationDate'])
+                row['WheelChairAccessible'] = intern(row['WheelChairAccessible'])
+                row['JourneyStopType'] = intern(row['JourneyStopType'])
+                row['UserStopCode'] = intern(row['UserStopCode'])
+                row['DestinationCode'] = intern(row['DestinationCode'])
+                row['TimingPointCode'] = intern(row['TimingPointCode'])
+                row['SideCode'] = intern(row['SideCode'])
+                row['LinePlanningNumber'] = intern(row['LinePlanningNumber'])
+                row['JourneyNumber'] = intern(row['JourneyNumber'])
+                row['LineDirection'] = intern(row['LineDirection'])
+                row['TripStopStatus'] = intern(row['TripStopStatus'])
         	storecurrect(row)
         	
 def storemessage(row):
