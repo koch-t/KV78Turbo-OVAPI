@@ -10,7 +10,7 @@ from cStringIO import StringIO
 import psycopg2
 from pymongo import Connection
 
-conn = psycopg2.connect("dbname='kv78turbo'")
+conn = psycopg2.connect("dbname='kv78turbo' user='postgres' port='5433'")
 mongo = Connection()
 mongo.drop_database('kv78turbo')
 db = mongo.kv78turbo
@@ -292,6 +292,12 @@ def queryJourneys(arguments):
 def queryStopAreaCodes (arguments):
         if len(arguments) == 1:
                 reply = {}
+                for stopareacode, values in stopareacode_store.items():
+                        for tpc, tpcvalues in stopareacode_store[stopareacode].items():
+                                tpc_meta = tpcmeta_store.find_one({'_id' : tpc})
+                                if tpc_meta != None:
+                                      del(tpc_meta['_id'])
+                                      reply[stopareacode] = tpc_meta
                 return reply
         else:
                 reply = {}
@@ -299,12 +305,15 @@ def queryStopAreaCodes (arguments):
                 for row in passtimes_store.find({'StopAreaCode' : { '$in': stopareas}}):
 			id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), str(row['FortifyOrderNumber'])])
                         del(row['_id'])
-                        if row['TimingPointCode'] not in reply:
-                        	reply = {row['TimingPointCode'] : {'Passes' : {id : row}}}
-                        elif 'Passes' in reply[row['TimingPointCode']]:
-                        	reply[row['TimingPointCode']]['Passes'][id] = row
+                        stopareacode = row['StopAreaCode']
+                        if stopareacode not in reply:
+                                reply[stopareacode] = {row['TimingPointCode'] : {'Passes' : {id : row}}}
+                        if row['TimingPointCode'] not in reply[stopareacode]:
+                        	reply[stopareacode] = {row['TimingPointCode'] : {'Passes' : {id : row}}}
+                        elif 'Passes' in reply[stopareacode][row['TimingPointCode']]:
+                        	reply[stopareacode][row['TimingPointCode']]['Passes'][id] = row
                         else:
-                        	reply[row['TimingPointCode']]['Passes'] = {id : row }
+                        	reply[stopareacode][row['TimingPointCode']]['Passes'] = {id : row }
                 return reply  
                 
 def queryLines(arguments):

@@ -12,7 +12,7 @@ from const import ZMQ_KV7
 from twisted.internet import task
 from twisted.internet import reactor
 
-conn = psycopg2.connect("dbname='kv78turbo'")
+conn = psycopg2.connect("dbname='kv78turbo' user='postgres' port='5433'")
 
 sys.stderr.write('Setting up a ZeroMQ PUSH: %s\n' % (ZMQ_KV7))
 context = zmq.Context()
