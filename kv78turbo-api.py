@@ -9,7 +9,7 @@ from gzip import GzipFile
 from cStringIO import StringIO
 import psycopg2
 
-conn = psycopg2.connect("dbname='kv78turbo1' user='postgres' port='5433'")
+conn = psycopg2.connect("dbname='kv78turbo' user='postgres' port='5433'")
 
 tpc_store = {}
 stopareacode_store = {}
