@@ -109,14 +109,14 @@ def storecurrect(row):
     destinationmeta_id = row['DataOwnerCode'] + '_' + row['DestinationCode']
     pass_id = '_'.join([row['UserStopCode'], row['UserStopOrderNumber']])
     key = id + '_' + pass_id
-
+  
     if row['TripStopStatus'] == 'CANCEL': #debug for testing CANCELED passes
     	    print 'CANCEL ' + id
             print 'XCANCEL'+ row['LastUpdateTimeStamp'] + '  ' + row['ExpectedArrivalTime'] + ' ' + id + '_' + pass_id 
 
     row['ExpectedArrivalTime'] = toisotime(row['OperationDate'], row['ExpectedArrivalTime'], row)
     row['ExpectedDepartureTime'] = toisotime(row['OperationDate'], row['ExpectedDepartureTime'], row)
-        
+    row['LocalServiceLevelCode'] = int(row['LocalServiceLevelCode'])    
     if row['TripStopStatus'] == 'CANCEL': #TODO IMPROVE!
     	    try:
     	    	    fetchkv7(row) #fetch KV7 as CANCEL message may be too much ahead of the KV7 feed and thus are overwritten and we wish KV7 info for CANCEL's
@@ -134,7 +134,7 @@ def storecurrect(row):
         #raise
 
     tpc_meta = tpcmeta_store.find_one({'_id' : row['TimingPointCode']})
-    
+      
     if row['TimingPointCode'] not in tpc_store:
     	    tpc_store[row['TimingPointCode']] = {'GeneralMessages' : {}, 'Passes' : {id : True}}
     elif id not in tpc_store[row['TimingPointCode']]['Passes']:
@@ -266,7 +266,9 @@ def queryTimingPoints(arguments):
                 for row in passtimes_store.find({'TimingPointCode' : { '$in': tpccodes}}):
 			id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), str(row['FortifyOrderNumber'])])
                         del(row['_id'])
-                        if 'Passes' in reply[row['TimingPointCode']]:
+                        if row['TimingPointCode'] not in reply:
+                                reply[row['TimingPointCode']] = {'Passes' : {id : row}} 
+                        elif 'Passes' in reply[row['TimingPointCode']]:
                         	reply[row['TimingPointCode']]['Passes'][id] = row
                         else:
                         	reply[row['TimingPointCode']]['Passes'] = {id : row }
@@ -282,12 +284,15 @@ def queryJourneys(arguments):
                 reply = {}
                 journeys = set(arguments[1].split(','))
                 for journey in journeys:
-                	key = journey.split('_')
-                	for stop in passtimes_store.find({'DataOwnerCode' : key[0], 'LocalServiceLevelCode' : int(key[1]), 'LinePlanningNumber' : key[2], 'JourneyNumber' : int(key[3]), 'FortifyOrderNumber' : int(key[4])}):
-                		if journey in reply :
+                        if journey in journey_store:
+                	    key = journey.split('_')
+                            for stop in passtimes_store.find({'DataOwnerCode' : key[0], 'LocalServiceLevelCode' : int(key[1]), 'LinePlanningNumber' : key[2], 'JourneyNumber' : int(key[3]), 'FortifyOrderNumber' : int(key[4])}):
+                		del(stop['_id'])
+                                if journey in reply :
                 			reply[journey]['Stops'][stop['UserStopOrderNumber']] = stop
                 		else:
                 			reply[journey] = {'Stops' : {stop['UserStopOrderNumber'] : stop}}
+                return reply
 
 def queryStopAreaCodes (arguments):
         if len(arguments) == 1:
