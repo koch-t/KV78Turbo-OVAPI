@@ -210,7 +210,7 @@ def storecurrect(row):
 	del(row['SideCode'])
 
     row["_id"] = key
-    passtimes_store.update({"_id" : key},row,True)
+    passtimes_store.save(row)
             
 def storeplanned(row):
 	row['TargetArrivalTime'] = toisotime(row['OperationDate'], row['TargetArrivalTime'], row)
@@ -267,11 +267,9 @@ def queryTimingPoints(arguments):
 			id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), str(row['FortifyOrderNumber'])])
                         del(row['_id'])
                         if row['TimingPointCode'] not in reply:
-                                reply[row['TimingPointCode']] = {'Passes' : {id : row}} 
-                        elif 'Passes' in reply[row['TimingPointCode']]:
-                        	reply[row['TimingPointCode']]['Passes'][id] = row
+                                reply[row['TimingPointCode']] = {'Passes' : {id : row}}
                         else:
-                        	reply[row['TimingPointCode']]['Passes'] = {id : row }
+                        	reply[row['TimingPointCode']]['Passes'][id] = row
 		return reply
 	
 def queryJourneys(arguments):
@@ -313,10 +311,8 @@ def queryStopAreaCodes (arguments):
                         stopareacode = row['StopAreaCode']
                         if stopareacode not in reply:
                                 reply[stopareacode] = {row['TimingPointCode'] : {'Passes' : {id : row}}}
-                        if row['TimingPointCode'] not in reply[stopareacode]:
-                        	reply[stopareacode] = {row['TimingPointCode'] : {'Passes' : {id : row}}}
-                        elif 'Passes' in reply[stopareacode][row['TimingPointCode']]:
-                        	reply[stopareacode][row['TimingPointCode']]['Passes'][id] = row
+                        elif row['TimingPointCode'] not in reply[stopareacode]:
+                        	reply[stopareacode][row['TimingPointCode']] = {'Passes' : {id : row}}
                         else:
                         	reply[stopareacode][row['TimingPointCode']]['Passes'] = {id : row }
                 return reply  

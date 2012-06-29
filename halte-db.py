@@ -22,9 +22,9 @@ def notfound(start_response):
 
 def searchStops(query):
     reply = {'Columns' : ['TimingPointTown','TimingPointName', 'Name', 'Latitude', 'Longitude'] , 'Rows' : []}
-    res = cl.Query ( query, '*' )
     try:
-       if res.has_key('matches'):
+        res = cl.Query ( query, '*' )
+        if res.has_key('matches'):
          for match in res['matches']:
                 row = {}
 		for attr in res['attrs']:
@@ -33,7 +33,7 @@ def searchStops(query):
 			row[attrname] = value
 		reply['Rows'].append([row['timingpointtown'],row['timingpointname'],row['name'],row['latitude'],row['longitude']])
     except:
-	pass
+	raise
     return reply
             
 	
@@ -58,7 +58,7 @@ def queryStops(environ, start_response):
     elif 'bottomright' in params and 'topleft' in params:
     	    minLatitude, maxLongitude = params['bottomright'][0].split(',')
     	    maxLatitude, minLongitude = params['topleft'][0].split(',')
-    	    cur.execute("SELECT distinct on (timingpointtown,name) timingpointtown,name,latitude,longitude FROM timingpoint WHERE latitude > %s AND latitude < %s AND longitude > %s AND longitude < %s", [minLatitude,maxLatitude,minLongitude,maxLongitude])
+    	    cur.execute("SELECT distinct on (timingpointtown,name,stopareacode) timingpointtown,name,latitude,longitude FROM timingpoint WHERE latitude > %s AND latitude < %s AND longitude > %s AND longitude < %s", [minLatitude,maxLatitude,minLongitude,maxLongitude])
     elif 'near' in params:
     	    latitude, longitude = params['near'][0].split(',')
     	    limit = '100'
