@@ -109,7 +109,12 @@ def storecurrect(row):
     destinationmeta_id = row['DataOwnerCode'] + '_' + row['DestinationCode']
     pass_id = '_'.join([row['UserStopCode'], row['UserStopOrderNumber']])
     key = id + '_' + pass_id
-  
+
+    oldrow = passtimes_store.find_one({'_id' : key})
+    if oldrow != None:
+            oldrow.update(row)
+            row = oldrow
+             
     if row['TripStopStatus'] == 'CANCEL': #debug for testing CANCELED passes
     	    print 'CANCEL ' + id
             print 'XCANCEL'+ row['LastUpdateTimeStamp'] + '  ' + row['ExpectedArrivalTime'] + ' ' + id + '_' + pass_id 
@@ -132,23 +137,22 @@ def storecurrect(row):
     except:
         pass
         #raise
-
-    tpc_meta = tpcmeta_store.find_one({'_id' : row['TimingPointCode']})
       
     if row['TimingPointCode'] not in tpc_store:
     	    tpc_store[row['TimingPointCode']] = {'GeneralMessages' : {}, 'Passes' : {id : True}}
     elif id not in tpc_store[row['TimingPointCode']]['Passes']:
     	    tpc_store[row['TimingPointCode']]['Passes'][id] = True
-    
-    if tpc_meta != None:    
-            del tpc_meta['_id']	    
-    	    row.update(tpc_meta)
+    if 'TimingPointName' not in row:
+            tpc_meta = tpcmeta_store.find_one({'_id' : row['TimingPointCode']})
+            if tpc_meta != None:    
+                   del tpc_meta['_id']	    
+    	           row.update(tpc_meta)
      
-    destination_meta = destinationmeta_store.find_one({'_id' : destinationmeta_id})
-   
-    if destination_meta != None:
-            del destination_meta['_id']
-    	    row['DestinationName50'] = destination_meta['DestinationName50']
+    if 'DestinationName50' not in row:
+            destination_meta = destinationmeta_store.find_one({'_id' : destinationmeta_id})
+            if destination_meta != None:
+                del destination_meta['_id']
+    	        row['DestinationName50'] = destination_meta['DestinationName50']
     
     if 'StopAreaCode' in row and row['StopAreaCode'] != None:
     	    if row['StopAreaCode'] not in stopareacode_store:
@@ -162,12 +166,13 @@ def storecurrect(row):
     	line_store[line_id]['Line']['LineDirection'] = row['LineDirection']
     	line_store[line_id]['Line']['LinePlanningNumber'] = row['LinePlanningNumber']
 
-    line_meta = linemeta_store.find_one({'_id' : linemeta_id})  
+    if 'LinePublicNumber' not in row:
+            line_meta = linemeta_store.find_one({'_id' : linemeta_id})  
     
-    if line_meta != None:
-	    del line_meta['_id']
-    	    row.update(line_meta)
-    	    line_store[line_id]['Line'].update(line_meta)
+            if line_meta != None:
+	         del line_meta['_id']
+    	         row.update(line_meta)
+    	         line_store[line_id]['Line'].update(line_meta)
     
     if 'DestinationName50' in row:
     	    line_store[line_id]['Line']['DestinationName50'] = row['DestinationName50']
