@@ -49,30 +49,49 @@ def queryTowns(environ, start_response):
 
 def queryStops(environ, start_response):
     params = parse_qs(environ.get('QUERY_STRING',''))
-    reply = {'Columns' : ['TimingPointTown', 'Name', 'Latitude', 'Longitude'] , 'Rows' : []}
+    reply = {'Columns' : ['TimingPointTown', 'Name', 'Latitude', 'Longitude' , 'StopAreaCode'] , 'Rows' : []}
     cur = conn.cursor()
     if 'town' in params:
-       	    cur.execute("SELECT distinct on (timingpointtown,name) timingpointtown,name,latitude,longitude FROM timingpoint WHERE timingpointtown = %s ORDER BY name", [params['town'][0]])
+       	    cur.execute("SELECT distinct on (timingpointtown,name) timingpointtown,name,latitude,longitude,stopareacode FROM timingpoint WHERE timingpointtown = %s ORDER BY name", [params['town'][0]])
     elif 'tpc' in params:
-    	    cur.execute("SELECT distinct on (timingpointtown,name) timingpointtown,name,latitude,longitude FROM timingpoint WHERE timingpointcode = %s ORDER BY name", [params['tpc'][0]])
+    	    cur.execute("SELECT distinct on (timingpointtown,name) timingpointtown,name,latitude,longitude,stopareacode FROM timingpoint WHERE timingpointcode = %s ORDER BY name", [params['tpc'][0]])
     elif 'bottomright' in params and 'topleft' in params:
     	    minLatitude, maxLongitude = params['bottomright'][0].split(',')
     	    maxLatitude, minLongitude = params['topleft'][0].split(',')
-    	    cur.execute("SELECT distinct on (timingpointtown,name) timingpointtown,name,latitude,longitude FROM timingpoint WHERE latitude > %s AND latitude < %s AND longitude > %s AND longitude < %s", [minLatitude,maxLatitude,minLongitude,maxLongitude])
+    	    cur.execute("SELECT distinct on (timingpointtown,name) timingpointtown,name,latitude,longitude,stopareacode FROM timingpoint WHERE latitude > %s AND latitude < %s AND longitude > %s AND longitude < %s", [minLatitude,maxLatitude,minLongitude,maxLongitude])
     elif 'near' in params:
     	    latitude, longitude = params['near'][0].split(',')
     	    limit = '100'
     	    if 'limit' in params:
     	      	limit = params['limit'][0]
     	    cur = conn.cursor()
-    	    cur.execute("SELECT timingpointtown,name,latitude,longitude FROM timingpoint  WHERE timingpointcode in (select distinct on (timingpointtown, name)timingpointcode FROM timingpoint) ORDER by ST_Distance(the_geom, st_setsrid(st_makepoint(%s, %s),4326)) LIMIT %s;", [longitude,latitude,limit])
+    	    cur.execute("SELECT timingpointtown,name,latitude,longitude,stopareacode FROM timingpoint  WHERE timingpointcode in (select distinct on (timingpointtown, name)timingpointcode FROM timingpoint) ORDER by ST_Distance(the_geom, st_setsrid(st_makepoint(%s, %s),4326)) LIMIT %s;", [longitude,latitude,limit])
     elif 'search' in params:
             return searchStops(params['search'][0])
     else:
     	    return '404'
     rows = cur.fetchall()
     for row in rows:
-    	    reply['Rows'].append([row[0],row[1],row[2],row[3]])
+    	    reply['Rows'].append([row[0],row[1],row[2],row[3],row[4]])
+    cur.close()
+    return reply
+
+def queryStopAreas(environ, start_response):
+    params = parse_qs(environ.get('QUERY_STRING',''))
+    reply = {'Columns' : ['TimingPointTown', 'Name', 'Latitude', 'Longitude', 'StopAreaCode'] , 'Rows' : []}
+    cur = conn.cursor()
+    if 'near' in params:
+    	    latitude, longitude = params['near'][0].split(',')
+    	    limit = '100'
+    	    if 'limit' in params:
+    	      	limit = params['limit'][0]
+    	    cur = conn.cursor()
+    	    cur.execute("SELECT timingpointtown,name,latitude,longitude,stopareacode FROM timingpoint  WHERE timingpointcode in (select distinct on (stopareacode)timingpointcode FROM timingpoint) ORDER by ST_Distance(the_geom, st_setsrid(st_makepoint(%s, %s),4326)) LIMIT %s;", [longitude,latitude,limit])
+    else:
+    	    return '404'
+    rows = cur.fetchall()
+    for row in rows:
+    	    reply['Rows'].append([row[0],row[1],row[2],row[3],row[4]])
     cur.close()
     return reply
     
@@ -107,6 +126,8 @@ def HalteDB(environ, start_response):
     	    reply = queryTowns(environ, start_response)
     elif arguments[0] == 'stops':
     	    reply = queryStops(environ, start_response)
+    elif arguments[0] == 'stopareas':
+            reply = queryStopAreas(environ, start_response)
     elif arguments[0] == 'timingpoints':
     	    reply = queryTimingPoints(environ, start_response)
     else:
