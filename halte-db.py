@@ -1,4 +1,4 @@
-  import uwsgi
+import uwsgi
 import psycopg2
 import simplejson
 from sphinxapi import *
