@@ -1,4 +1,4 @@
-import uwsgi
+  import uwsgi
 import psycopg2
 import simplejson
 from sphinxapi import *
@@ -98,21 +98,28 @@ def queryStopAreas(environ, start_response):
 def queryTimingPoints(environ, start_response):
     params = parse_qs(environ.get('QUERY_STRING',''))
 
-    reply = {'Columns' : ['TimingPointTown', 'TimingPointName', 'Name', 'TimingPointCode', 'kv55', 'kv78turbo', 'arriva55'] , 'Rows' : []}
+    reply = {'Columns' : ['TimingPointTown', 'TimingPointName', 'Name', 'TimingPointCode', 'StopAreaCode', 'kv55', 'kv78turbo', 'arriva55'] , 'Rows' : []}
     cur = conn.cursor()
     if 'town' in params and 'timingpointname' in params:
-       	    cur.execute("SELECT timingpointtown,timingpointname,name,timingpointcode, kv55, kv78turbo, arriva55 FROM timingpoint WHERE timingpointtown = %s AND timingpoointname = %s", [params['town'][0], params['timingpointname'][0]])
+       	    cur.execute("SELECT timingpointtown,timingpointname,name,timingpointcode,stopareacode, kv55, kv78turbo, arriva55 FROM timingpoint WHERE timingpointtown = %s AND timingpoointname = %s", [params['town'][0], params['timingpointname'][0]])
     elif 'town' in params and 'name' in params:
-       	    cur.execute("SELECT timingpointtown,timingpointname,name,timingpointcode, kv55, kv78turbo, arriva55 FROM timingpoint WHERE timingpointtown = %s AND name = %s", [params['town'][0], params['name'][0]])
+       	    cur.execute("SELECT timingpointtown,timingpointname,name,timingpointcode,stopareacode, kv55, kv78turbo, arriva55 FROM timingpoint WHERE timingpointtown = %s AND name = %s", [params['town'][0], params['name'][0]])
     elif 'timingpointtown' in params:
-       	    cur.execute("SELECT timingpointtown,timingpointname,name,timingpointcode, kv55, kv78turbo, arriva55 FROM timingpoint WHERE timingpointtown = %s", [params['town'][0]])
+       	    cur.execute("SELECT timingpointtown,timingpointname,name,timingpointcode,stopareacode, kv55, kv78turbo, arriva55 FROM timingpoint WHERE timingpointtown = %s", [params['town'][0]])
     elif 'tpc' in params:
-       	    cur.execute("SELECT timingpointtown,timingpointname,name,timingpointcode, kv55, kv78turbo, arriva55 FROM timingpoint AS t1 WHERE EXISTS (select 1 FROM timingpoint AS t2 WHERE timingpointcode = %s and t1.name = t2.name AND t1.timingpointtown = t2.timingpointtown)", [params['tpc'][0]])
+       	    cur.execute("SELECT timingpointtown,timingpointname,name,timingpointcode,stopareacode, kv55, kv78turbo, arriva55 FROM timingpoint AS t1 WHERE EXISTS (select 1 FROM timingpoint AS t2 WHERE timingpointcode = %s and t1.name = t2.name AND t1.timingpointtown = t2.timingpointtown)", [params['tpc'][0]])
+    elif 'near' in params:
+    	    latitude, longitude = params['near'][0].split(',')
+    	    limit = '100'
+    	    if 'limit' in params:
+    	      	limit = params['limit'][0]
+    	    cur = conn.cursor()
+    	    cur.execute("SELECT timingpointtown,timingpointname,name,timingpointcode,stopareacode, kv55, kv78turbo, arriva55 FROM timingpoint ORDER by ST_Distance(the_geom, st_setsrid(st_makepoint(%s, %s),4326)) LIMIT %s;", [longitude,latitude,limit])
     else:
     	    return '404'
     rows = cur.fetchall()
     for row in rows:
-    	    reply['Rows'].append([row[0],row[1],row[2],row[3],row[4],row[5],row[6]])
+    	    reply['Rows'].append([row[0],row[1],row[2],row[3],row[4],row[5],row[6],row[7])
     cur.close()
     return reply
 	
