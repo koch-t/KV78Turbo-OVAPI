@@ -72,7 +72,10 @@ def queryStops(environ, start_response):
     	    return '404'
     rows = cur.fetchall()
     for row in rows:
-    	    reply['Rows'].append([row[0],row[1],row[2],row[3],row[4]])
+    	    if len(reply['Columns']) == 5:
+    	       reply['Rows'].append([row[0],row[1],row[2],row[3],row[4]])
+    	    if len(reply['Columns']) == 6:
+    	       reply['Rows'].append([row[0],row[1],row[2],row[3],row[4],row[5]])
     cur.close()
     return reply
 
