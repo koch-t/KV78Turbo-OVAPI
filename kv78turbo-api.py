@@ -40,10 +40,14 @@ for row in rows:
 cur.close()
 
 cur = conn.cursor()
-cur.execute("select timingpointcode,timingpointname,timingpointtown,stopareacode,CAST(ST_Y(the_geom) AS NUMERIC(9,7)) AS lat,CAST(ST_X(the_geom) AS NUMERIC(8,7)) AS lon FROM (select distinct t.timingpointcode as timingpointcode, t.timingpointname as timingpointname, t.timingpointtown as timingpointtown,t.stopareacode as stopareacode,ST_Transform(st_setsrid(st_makepoint(locationx_ew, locationy_ns), 28992), 4326) AS the_geom from timingpoint as t where not exists (select 1 from usertimingpoint,localservicegrouppasstime where t.timingpointcode = usertimingpoint.timingpointcode and journeystoptype = 'INFOPOINT' and usertimingpoint.dataownercode = localservicegrouppasstime.dataownercode and usertimingpoint.userstopcode = localservicegrouppasstime.userstopcode)) as W;",[])
+cur.execute("select timingpointcode,timingpointname,timingpointtown,stopareacode,CAST(ST_Y(the_geom) AS NUMERIC(9,7)) AS lat,CAST(ST_X(the_geom) AS NUMERIC(8,7)) AS lon,motorisch,visueel FROM (select distinct t.timingpointcode as timingpointcode,motorisch,visueel, t.timingpointname as timingpointname, t.timingpointtown as timingpointtown,t.stopareacode as stopareacode,ST_Transform(st_setsrid(st_makepoint(t.locationx_ew, t.locationy_ns), 28992), 4326) AS the_geom from timingpoint as t left join haltescan as h on (t.timingpointcode = h.timingpointcode) where not exists (select 1 from usertimingpoint,localservicegrouppasstime where t.timingpointcode = usertimingpoint.timingpointcode and journeystoptype = 'INFOPOINT' and usertimingpoint.dataownercode = localservicegrouppasstime.dataownercode and usertimingpoint.userstopcode = localservicegrouppasstime.userstopcode)) as W;",[])
 kv7rows = cur.fetchall()
 for kv7row in kv7rows:
-    tpc_meta[intern(kv7row[0])] = {'TimingPointName' : kv7row[1], 'TimingPointTown' : kv7row[2], 'StopAreaCode' : kv7row[3], 'Latitude' : kv7row[4], 'Longitude' : kv7row[5]} 
+    tpc_meta[intern(kv7row[0])] = {'TimingPointName' : intern(kv7row[1]), 'TimingPointTown' : intern(kv7row[2]), 'StopAreaCode' : kv7row[3], 'Latitude' : kv7row[4], 'Longitude' : kv7row[5]}
+    if not (kv7row[6] == None and kv7row[7] == None):
+       print kv7row[0]
+       tpc_meta[kv7row[0]]['TimingPointWheelChairAccessible'] = kv7row[6]
+       tpc_meta[kv7row[0]]['TimingPointVisualAccessible'] = kv7row[7]
     if kv7row[2] == None:
        del(tpc_meta[row['TimingPointCode']]['StopAreaCode'])
 cur.close()
