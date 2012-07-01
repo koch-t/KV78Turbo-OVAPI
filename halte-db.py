@@ -114,7 +114,11 @@ def queryTimingPoints(environ, start_response):
     	    if 'limit' in params:
     	      	limit = params['limit'][0]
     	    cur = conn.cursor()
-    	    cur.execute("SELECT timingpointtown,timingpointname,name,timingpointcode,stopareacode, kv55, kv78turbo, arriva55 FROM timingpoint ORDER by ST_Distance(the_geom, st_setsrid(st_makepoint(%s, %s),4326)) LIMIT %s;", [longitude,latitude,limit])
+    	    if 'destinations' in params:
+    	    	 reply['Columns'].append('DestinationName50')
+    	    	 cur.execute("SELECT timingpointtown,timingpointname,name,t.timingpointcode,stopareacode, kv55, kv78turbo, arriva55,destinationname50 FROM timingpoint as t left join destinationuserstop on (t.timingpointcode = destinationuserstop.timingpointcode) ORDER by ST_Distance(the_geom, st_setsrid(st_makepoint(%s, %s),4326)) LIMIT %s;", [longitude,latitude,limit])
+    	    else:
+    	         cur.execute("SELECT timingpointtown,timingpointname,name,timingpointcode,stopareacode, kv55, kv78turbo, arriva55 FROM timingpoint ORDER by ST_Distance(the_geom, st_setsrid(st_makepoint(%s, %s),4326)) LIMIT %s;", [longitude,latitude,limit])
     else:
     	    return '404'
     rows = cur.fetchall()
