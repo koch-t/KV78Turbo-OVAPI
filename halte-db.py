@@ -97,7 +97,21 @@ def queryStopAreas(environ, start_response):
     	    reply['Rows'].append([row[0],row[1],row[2],row[3],row[4]])
     cur.close()
     return reply
-    
+
+def queryAccessibility(environ, start_response):
+    params = parse_qs(environ.get('QUERY_STRING',''))
+    reply = {'Columns' : ['TimingPointTown', 'TimingPointName', 'Name', 'TimingPointCode', 'kv78turbo','TimingPointWheelChairAccessible', 'TimingPointVisualAccessible', 'Steps','Latitude', 'Longitude'] , 'Rows' : []}
+    cur = conn.cursor()
+    if 'tpc' in params:
+       	    cur.execute("SELECT timingpointtown, timingpointname,name,t.timingpointcode,kv78turbo,motorisch,visueel,trap,latitude,longitude FROM timingpoint as t left join haltescan as h on (t.timingpointcode = h.timingpointcode) WHERE timingpointcode = %s", [params['tpc'][0]])
+    else:
+            return '404'
+    rows = cur.fetchall()
+    for row in rows:
+    	    reply['Rows'].append([row[0],row[1],row[2],row[3],row[4],row[5],row[6],row[7],row[8],row[9]])
+    cur.close()
+    return reply
+
 def queryTimingPoints(environ, start_response):
     params = parse_qs(environ.get('QUERY_STRING',''))
 
@@ -152,6 +166,8 @@ def HalteDB(environ, start_response):
             reply = queryStopAreas(environ, start_response)
     elif arguments[0] == 'timingpoints':
     	    reply = queryTimingPoints(environ, start_response)
+    elif arguments[0] == 'accessiblity':
+    	    reply = queryAccessiblity(environ, start_response)
     else:
     	    return notfound(start_response)
     if reply == '404':
