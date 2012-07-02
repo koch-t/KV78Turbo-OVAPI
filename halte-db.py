@@ -118,7 +118,10 @@ def queryTimingPoints(environ, start_response):
     	      	limit = params['limit'][0]
     	    cur = conn.cursor()
     	    if 'destinations' in params:
-    	    	 reply['Columns'].extend(['DestinationName50','LinePlanningNumber','LinePublicNumber','TimingPointWheelChairAccessible','TimingPointVisualAccessible'])
+    	    	 reply['Columns'].extend(['DestinationName50','LinePlanningNumber','LinePublicNumber','Latitude','Longitude'])
+    	    	 cur.execute("SELECT timingpointtown,timingpointname,name,t.timingpointcode,stopareacode, kv55, kv78turbo, arriva55,destinationname50,lineplanningnumber,linepublicnumber,latitude,longitude FROM timingpoint as t,destinationuserstop as d where d.timingpointcode = t.timingpointcode and destinationcode is not null ORDER by ST_Distance(the_geom, st_setsrid(st_makepoint(%s, %s),4326)) LIMIT %s;", [longitude,latitude,limit])
+    	    elif 'destinations' in params and 'accessibility' in params:
+    	    	 reply['Columns'].extend(['DestinationName50','LinePlanningNumber','LinePublicNumber','TimingPointWheelChairAccessible','TimingPointVisualAccessible','Latitude','Longitude'])
     	    	 cur.execute("SELECT timingpointtown, timingpointname, name,x.timingpointcode,stopareacode,kv55,kv78turbo,arriva55,destinationname50,lineplanningnumber,linepublicnumber,motorisch,visueel from (SELECT timingpointtown,timingpointname,name,t.timingpointcode,stopareacode, kv55, kv78turbo, arriva55,destinationname50,lineplanningnumber,linepublicnumber FROM timingpoint as t,destinationuserstop as d where d.timingpointcode = t.timingpointcode and destinationcode is not null ORDER by ST_Distance(the_geom, st_setsrid(st_makepoint(%s, %s),4326)) LIMIT %s) as x left join haltescan as h on (h.timingpointcode = x.timingpointcode);", [longitude,latitude,limit])
     	    else:
     	         cur.execute("SELECT timingpointtown,timingpointname,name,timingpointcode,stopareacode, kv55, kv78turbo, arriva55 FROM timingpoint ORDER by ST_Distance(the_geom, st_setsrid(st_makepoint(%s, %s),4326)) LIMIT %s;", [longitude,latitude,limit])
@@ -128,8 +131,10 @@ def queryTimingPoints(environ, start_response):
     for row in rows:
             if len(reply['Columns']) == 8:
     	        reply['Rows'].append([row[0],row[1],row[2],row[3],row[4],row[5],row[6],row[7]])
-            elif len(reply['Columns']) == 13:
+    	    elif len(reply['Columns']) == 13:
                 reply['Rows'].append([row[0],row[1],row[2],row[3],row[4],row[5],row[6],row[7],row[8],row[9],row[10],row[11],row[12]])
+            elif len(reply['Columns']) == 15:
+                reply['Rows'].append([row[0],row[1],row[2],row[3],row[4],row[5],row[6],row[7],row[8],row[9],row[10],row[11],row[12],row[13],row[14]])
     cur.close()
     return reply
 	
