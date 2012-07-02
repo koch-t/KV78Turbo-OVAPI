@@ -10,7 +10,7 @@ from cStringIO import StringIO
 import psycopg2
 from pymongo import Connection
 
-conn = psycopg2.connect("dbname='kv78turbo'")
+conn = psycopg2.connect("dbname='kv78turbo' user='postgres' port='5433'")
 mongo = Connection()
 mongo.drop_database('kv78turbo')
 db = mongo.kv78turbo
@@ -110,13 +110,18 @@ def storecurrect(row):
     pass_id = '_'.join([row['UserStopCode'], row['UserStopOrderNumber']])
     key = id + '_' + pass_id
 
+    oldrow = passtimes_store.find_one({'_id' : key})
+    if oldrow != None:
+            oldrow.update(row)
+            row = oldrow
+             
     if row['TripStopStatus'] == 'CANCEL': #debug for testing CANCELED passes
     	    print 'CANCEL ' + id
             print 'XCANCEL'+ row['LastUpdateTimeStamp'] + '  ' + row['ExpectedArrivalTime'] + ' ' + id + '_' + pass_id 
 
     row['ExpectedArrivalTime'] = toisotime(row['OperationDate'], row['ExpectedArrivalTime'], row)
     row['ExpectedDepartureTime'] = toisotime(row['OperationDate'], row['ExpectedDepartureTime'], row)
-        
+    row['LocalServiceLevelCode'] = int(row['LocalServiceLevelCode'])    
     if row['TripStopStatus'] == 'CANCEL': #TODO IMPROVE!
     	    try:
     	    	    fetchkv7(row) #fetch KV7 as CANCEL message may be too much ahead of the KV7 feed and thus are overwritten and we wish KV7 info for CANCEL's
@@ -132,23 +137,22 @@ def storecurrect(row):
     except:
         pass
         #raise
-
-    tpc_meta = tpcmeta_store.find_one({'_id' : row['TimingPointCode']})
-    
+      
     if row['TimingPointCode'] not in tpc_store:
     	    tpc_store[row['TimingPointCode']] = {'GeneralMessages' : {}, 'Passes' : {id : True}}
     elif id not in tpc_store[row['TimingPointCode']]['Passes']:
     	    tpc_store[row['TimingPointCode']]['Passes'][id] = True
-    
-    if tpc_meta != None:    
-            del tpc_meta['_id']	    
-    	    row.update(tpc_meta)
+    if 'TimingPointName' not in row:
+            tpc_meta = tpcmeta_store.find_one({'_id' : row['TimingPointCode']})
+            if tpc_meta != None:    
+                   del tpc_meta['_id']	    
+    	           row.update(tpc_meta)
      
-    destination_meta = destinationmeta_store.find_one({'_id' : destinationmeta_id})
-   
-    if destination_meta != None:
-            del destination_meta['_id']
-    	    row['DestinationName50'] = destination_meta['DestinationName50']
+    if 'DestinationName50' not in row:
+            destination_meta = destinationmeta_store.find_one({'_id' : destinationmeta_id})
+            if destination_meta != None:
+                del destination_meta['_id']
+    	        row['DestinationName50'] = destination_meta['DestinationName50']
     
     if 'StopAreaCode' in row and row['StopAreaCode'] != None:
     	    if row['StopAreaCode'] not in stopareacode_store:
@@ -162,12 +166,13 @@ def storecurrect(row):
     	line_store[line_id]['Line']['LineDirection'] = row['LineDirection']
     	line_store[line_id]['Line']['LinePlanningNumber'] = row['LinePlanningNumber']
 
-    line_meta = linemeta_store.find_one({'_id' : linemeta_id})  
+    if 'LinePublicNumber' not in row:
+            line_meta = linemeta_store.find_one({'_id' : linemeta_id})  
     
-    if line_meta != None:
-	    del line_meta['_id']
-    	    row.update(line_meta)
-    	    line_store[line_id]['Line'].update(line_meta)
+            if line_meta != None:
+	         del line_meta['_id']
+    	         row.update(line_meta)
+    	         line_store[line_id]['Line'].update(line_meta)
     
     if 'DestinationName50' in row:
     	    line_store[line_id]['Line']['DestinationName50'] = row['DestinationName50']
@@ -210,7 +215,7 @@ def storecurrect(row):
 	del(row['SideCode'])
 
     row["_id"] = key
-    passtimes_store.update({"_id" : key},row,True)
+    passtimes_store.save(row)
             
 def storeplanned(row):
 	row['TargetArrivalTime'] = toisotime(row['OperationDate'], row['TargetArrivalTime'], row)
@@ -266,10 +271,10 @@ def queryTimingPoints(arguments):
                 for row in passtimes_store.find({'TimingPointCode' : { '$in': tpccodes}}):
 			id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), str(row['FortifyOrderNumber'])])
                         del(row['_id'])
-                        if 'Passes' in reply[row['TimingPointCode']]:
-                        	reply[row['TimingPointCode']]['Passes'][id] = row
+                        if row['TimingPointCode'] not in reply:
+                                reply[row['TimingPointCode']] = {'Passes' : {id : row}}
                         else:
-                        	reply[row['TimingPointCode']]['Passes'] = {id : row }
+                        	reply[row['TimingPointCode']]['Passes'][id] = row
 		return reply
 	
 def queryJourneys(arguments):
@@ -282,16 +287,25 @@ def queryJourneys(arguments):
                 reply = {}
                 journeys = set(arguments[1].split(','))
                 for journey in journeys:
-                	key = journey.split('_')
-                	for stop in passtimes_store.find({'DataOwnerCode' : key[0], 'LocalServiceLevelCode' : int(key[1]), 'LinePlanningNumber' : key[2], 'JourneyNumber' : int(key[3]), 'FortifyOrderNumber' : int(key[4])}):
-                		if journey in reply :
+                        if journey in journey_store:
+                	    key = journey.split('_')
+                            for stop in passtimes_store.find({'DataOwnerCode' : key[0], 'LocalServiceLevelCode' : int(key[1]), 'LinePlanningNumber' : key[2], 'JourneyNumber' : int(key[3]), 'FortifyOrderNumber' : int(key[4])}):
+                		del(stop['_id'])
+                                if journey in reply :
                 			reply[journey]['Stops'][stop['UserStopOrderNumber']] = stop
                 		else:
                 			reply[journey] = {'Stops' : {stop['UserStopOrderNumber'] : stop}}
+                return reply
 
 def queryStopAreaCodes (arguments):
         if len(arguments) == 1:
                 reply = {}
+                for stopareacode, values in stopareacode_store.items():
+                        for tpc, tpcvalues in stopareacode_store[stopareacode].items():
+                                tpc_meta = tpcmeta_store.find_one({'_id' : tpc})
+                                if tpc_meta != None:
+                                      del(tpc_meta['_id'])
+                                      reply[stopareacode] = tpc_meta
                 return reply
         else:
                 reply = {}
@@ -299,12 +313,13 @@ def queryStopAreaCodes (arguments):
                 for row in passtimes_store.find({'StopAreaCode' : { '$in': stopareas}}):
 			id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), str(row['FortifyOrderNumber'])])
                         del(row['_id'])
-                        if row['TimingPointCode'] not in reply:
-                        	reply = {row['TimingPointCode'] : {'Passes' : {id : row}}}
-                        elif 'Passes' in reply[row['TimingPointCode']]:
-                        	reply[row['TimingPointCode']]['Passes'][id] = row
+                        stopareacode = row['StopAreaCode']
+                        if stopareacode not in reply:
+                                reply[stopareacode] = {row['TimingPointCode'] : {'Passes' : {id : row}}}
+                        elif row['TimingPointCode'] not in reply[stopareacode]:
+                        	reply[stopareacode][row['TimingPointCode']] = {'Passes' : {id : row}}
                         else:
-                        	reply[row['TimingPointCode']]['Passes'] = {id : row }
+                        	reply[stopareacode][row['TimingPointCode']]['Passes'] = {id : row }
                 return reply  
                 
 def queryLines(arguments):
