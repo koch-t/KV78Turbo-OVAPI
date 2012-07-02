@@ -103,7 +103,7 @@ def queryAccessibility(environ, start_response):
     reply = {'Columns' : ['TimingPointTown', 'TimingPointName', 'Name', 'TimingPointCode', 'kv78turbo','TimingPointWheelChairAccessible', 'TimingPointVisualAccessible', 'Steps','Latitude', 'Longitude'] , 'Rows' : []}
     cur = conn.cursor()
     if 'tpc' in params:
-       	    cur.execute("SELECT timingpointtown, timingpointname,name,t.timingpointcode,kv78turbo,motorisch,visueel,trap,latitude,longitude FROM timingpoint as t left join haltescan as h on (t.timingpointcode = h.timingpointcode) WHERE timingpointcode = %s", [params['tpc'][0]])
+       	    cur.execute("SELECT timingpointtown, timingpointname,name,t.timingpointcode,kv78turbo,motorisch,visueel,trap,t.latitude,t.longitude FROM timingpoint as t left join haltescan as h on (t.timingpointcode = h.timingpointcode) WHERE t.timingpointcode = %s", [params['tpc'][0]])
     else:
             return '404'
     rows = cur.fetchall()
@@ -166,8 +166,8 @@ def HalteDB(environ, start_response):
             reply = queryStopAreas(environ, start_response)
     elif arguments[0] == 'timingpoints':
     	    reply = queryTimingPoints(environ, start_response)
-    elif arguments[0] == 'accessiblity':
-    	    reply = queryAccessiblity(environ, start_response)
+    elif arguments[0] == 'accessibility':
+    	    reply = queryAccessibility(environ, start_response)
     else:
     	    return notfound(start_response)
     if reply == '404':
