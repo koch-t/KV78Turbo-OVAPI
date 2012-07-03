@@ -56,7 +56,7 @@ def totimestamp(operationdate, timestamp, row):
     hours, minutes, seconds = timestamp.split(':')
     years, months, days = operationdate.split('-')
     if hours == 0 and minutes == 0 and seconds == 0:
-    	    return '0000-00-00T00:00'
+        return 0
     hours = int(hours)
     if hours >= 48:
         print row
@@ -64,9 +64,9 @@ def totimestamp(operationdate, timestamp, row):
     if hours >= 24:
         deltadays  = hours / 24
         hours = hours % 24
-        return long((datetime(int(years), int(months), int(days), hours, int(minutes), int(seconds)) + timedelta(days = deltadays)).strftime("%s"))
+        return int((datetime(int(years), int(months), int(days), hours, int(minutes), int(seconds)) + timedelta(days = deltadays)).strftime("%s"))
     else:
-        return long(datetime(int(years), int(months), int(days), hours, int(minutes), int(seconds)).strftime("%s"))
+        return int(datetime(int(years), int(months), int(days), hours, int(minutes), int(seconds)).strftime("%s"))
 
 def todate(timestamp):
     return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%dT%H:%M:%S")
@@ -151,7 +151,7 @@ def storecurrect(row):
 
     row['ExpectedArrivalTime'] = totimestamp(row['OperationDate'], row['ExpectedArrivalTime'], row)
     row['ExpectedDepartureTime'] = totimestamp(row['OperationDate'], row['ExpectedDepartureTime'], row)
-
+ 
     if row['TripStopStatus'] == 'CANCEL' and (id not in kv7cache or pass_id not in kv7cache[id]):
         try:
     	    fetchkv7(row) 
@@ -171,6 +171,8 @@ def storecurrect(row):
 	    pass
     row['IsTimingStop'] = (row['IsTimingStop'] == '1')
 
+    if row['WheelChairAccessible'] == 'ACCESSIBLE' and row['TimingPointCode'] in tpc_meta:
+        tpc_meta[row['TimingPointCode']]['TimingPointWheelChairAccessible'] = True
     
     if row['TimingPointCode'] not in tpc_store:
     	    tpc_store[row['TimingPointCode']] = {'Passes' : {id: row}, 'GeneralMessages' : {}}
@@ -192,12 +194,12 @@ def storecurrect(row):
     	line_store[line_id]['Line'] = {'DataOwnerCode' : row['DataOwnerCode']}
     	line_store[line_id]['Line']['LineDirection'] = row['LineDirection']
     	line_store[line_id]['Line']['LinePlanningNumber'] = row['LinePlanningNumber']
-      
-    if 'DestinationName50' in row:
-    	    line_store[line_id]['Line']['DestinationName50'] = row['DestinationName50']
-    elif 'DestinationName50' in line_store[line_id]:
-    	    del(line_store[line_id]['Line']['DestinationName50'])
-    		
+        if linemeta_id in line_meta:
+            line_store[line_id]['Line'].update(line_meta[linemeta_id])
+    
+    if destinationmeta_id in destination_meta:
+        line_store[line_id]['Line']['DestinationName50'] = destination_meta[destinationmeta_id]      
+        		
     if row['UserStopOrderNumber'] not in line_store[line_id]['Network']:
         line_store[line_id]['Network'][row['UserStopOrderNumber']] = {
             'TimingPointCode': row['TimingPointCode'],
@@ -243,7 +245,6 @@ def storeplanned(row):
     kv7cache[id][pass_id]['TargetDepartureTime'] = totimestamp(row['OperationDate'], row['TargetDepartureTime'], row)
     kv7cache[id][pass_id]['ProductFormulaType'] = int(row['ProductFormulaType'])
     row['DataOwnerCode'] = intern(row['DataOwnerCode'])
-    row['LocalServiceLevelCode'] = intern(row['LocalServiceLevelCode'])
     row['OperationDate'] = intern(row['OperationDate'])
     row['WheelChairAccessible'] = intern(row['WheelChairAccessible'])
     row['JourneyStopType'] = intern(row['JourneyStopType'])
@@ -295,8 +296,7 @@ garbage = 0
 def addMeta(passtimes):
     result = {}
     for key, values in passtimes.items():
-        result[key] = {}
-        result[key].update(values)
+        result[key] = values.copy()
         linemeta_id = values['DataOwnerCode'] + '_' + values['LinePlanningNumber']
         if linemeta_id in line_meta:
             result[key].update(line_meta[linemeta_id])
@@ -326,15 +326,14 @@ def queryTimingPoints(arguments):
         else:
             reply = {}
             for tpc in set(arguments[1].split(',')):
-                if tpc in tpc_store:
-                    if tpc != '':
-                        reply[tpc] = tpc_store[tpc]
+                if tpc in tpc_store and tpc != '':
+                        reply[tpc] = tpc_store[tpc].copy()
                         reply[tpc]['Passes'] = addMeta(reply[tpc]['Passes'])
-                    if tpc in tpc_meta:
-                        if tpc in reply:
-                            reply[tpc]['Stop'] = tpc_meta[tpc]
-                        else:
-    	    	            tpc_store[tpc] = {'Stop' : tpc_meta[tpc], 'GeneralMessages' : {}, 'Stops' : {}}
+                if tpc in tpc_meta and tpc != '':
+                    if tpc in reply:
+                        reply[tpc]['Stop'] = tpc_meta[tpc]
+                    else:
+    	    	        tpc_store[tpc] = {'Stop' : tpc_meta[tpc], 'GeneralMessages' : {}, 'Passes' : {}}
             return reply
 
 def queryJourneys(arguments):
@@ -348,7 +347,7 @@ def queryJourneys(arguments):
         for journey in set(arguments[1].split(',')):
             if journey in journey_store:
                 if journey != '':
-                    reply[journey] = journey_store[journey]
+                    reply[journey] = journey_store[journey].copy()
                     reply[journey]['Stops'] = addMeta(reply[journey]['Stops'])
         return reply
 
@@ -364,7 +363,7 @@ def queryStopAreas(arguments):
         reply = {}
         for stopareacode in set(arguments[1].split(',')):
             if stopareacode in stopareacode_store and stopareacode != '':
-                reply[stopareacode] = stopareacode_store[stopareacode]
+                reply[stopareacode] = stopareacode_store[stopareacode].copy()
                 for tpc, tpcvalues in stopareacode_store[stopareacode].items():
                     reply[stopareacode][tpc]['Passes'] = addMeta(reply[stopareacode][tpc]['Passes'])
         return reply
@@ -373,8 +372,7 @@ def queryLines(arguments):
     if len(arguments) == 1:
         reply = {}
         for line, values in line_store.items():
-            reply[line] = {}
-            reply[line].update(values['Line'])
+            reply[line] = values['Line'].copy()
             linemeta_id = values['Line']['DataOwnerCode'] + '_' + values['Line']['LinePlanningNumber']
             if linemeta_id in line_meta:
                 reply[line].update(line_meta[linemeta_id])
@@ -383,7 +381,7 @@ def queryLines(arguments):
         reply = {}
         for line in set(arguments[1].split(',')):
             if line in line_store and line != '':
-                reply[line] = line_store[line]
+                reply[line] = line_store[line].copy()
                 reply[line]['Actuals'] = addMeta(reply[line]['Actuals'])
         return reply
 
