@@ -2,14 +2,13 @@ import sys
 import time
 import zmq
 from const import ZMQ_KV8, ZMQ_KV78UWSGI, ZMQ_KV7
-from ctx import ctx
 from datetime import datetime, timedelta
 from time import strftime, gmtime
 from gzip import GzipFile
 from cStringIO import StringIO
 import psycopg2
 
-conn = psycopg2.connect("dbname='kv78turbo' user='postgres' port='5433'")
+conn = psycopg2.connect("dbname='kv78turbo'")
 
 tpc_store = {}
 stopareacode_store = {}
@@ -385,47 +384,52 @@ def queryLines(arguments):
                 reply[line]['Actuals'] = addMeta(reply[line]['Actuals'])
         return reply
 
+def recvPackage(content):
+    for line in content.split('\r\n')[:-1]:
+        if line[0] == '\\':
+                # control characters
+            if line[1] == 'G':
+                label, Name, Comment, Path, Endian, Enc, Res1, TimeStamp, _ = line[2:].split('|')
+            elif line[1] == 'T':
+                type = line[2:].split('|')[1]
+            elif line[1] == 'L':
+                keys = line[2:].split('|')
+        else:
+            row = {}
+            values = line.split('|')
+            for k,v in map(None, keys, values):
+                if v == '\\0':
+                    v = None
+                else:              
+                    row[k] = v
+            if row['TripStopStatus'] == 'CANCEL':
+                print 'XCANCEL'+ row['LastUpdateTimeStamp'] + '  ' + row['ExpectedArrivalTime']
+                print content
+            for x in ['ReasonType', 'AdviceType', 'AdviceContent','SubAdviceType','MessageType','ReasonContent','OperatorCode', 'SubReasonType', 'MessageContent']:
+                if x in row and row[x] is None:
+                    del(row[x])
+            if type == 'DATEDPASSTIME':
+                storecurrect(row)
+            elif type == 'GENERALMESSAGEUPDATE':
+                print 'GENERAL MESSAGE UPDATE'
+                storemessage(row)
+            elif type == 'GENERALMESSAGEDELETE':
+                print 'GENERAL MESSAGE DELETE'
+                deletemessage(row)
+
 while True:
     socks = dict(poller.poll())
     
     if socks.get(kv8) == zmq.POLLIN:
         multipart = kv8.recv_multipart()
         content = GzipFile('','r',0,StringIO(''.join(multipart[1:]))).read()
-        c = ctx(content)
-        if 'DATEDPASSTIME' in c.ctx:
-            for row in c.ctx['DATEDPASSTIME'].rows():
-                    if row['TripStopStatus'] == 'CANCEL':
-                        print 'XCANCEL'+ row['LastUpdateTimeStamp'] + '  ' + row['ExpectedArrivalTime']
-                        print content
-                    if row['MessageContent'] == None:
-                       	del(row['MessageContent'])
-                    if row['SubReasonType'] == None:
-                      	del(row['SubReasonType'])
-                    if row['ReasonType'] == None:
-                       	del(row['ReasonType'])
-                    if row['AdviceType'] == None:
-                      	del(row['AdviceType'])
-                    if row['AdviceContent'] == None:
-                      	del(row['AdviceContent'])
-                    if row['SubAdviceType'] == None:
-                       	del(row['SubAdviceType'])
-        	    if row['MessageType'] == None:
-        		del(row['MessageType'])
-        	    if row['ReasonContent'] == None:
-        		del(row['ReasonContent'])
-        	    if row['OperatorCode'] == None:
-        		del(row['OperatorCode'])
-                    storecurrect(row)
-        if 'GENERALMESSAGEUPDATE' in c.ctx:
-            sys.stdout.write('MSGUPDATE')
-            sys.stdout.flush()
-            for row in c.ctx['GENERALMESSAGEUPDATE'].rows():
-            	    storemessage(row)
-        if 'GENERALMESSAGEDELETE' in c.ctx:
-            sys.stdout.write('MSGDELETE')
-            sys.stdout.flush()
-            for row in c.ctx['GENERALMESSAGEDELETE'].rows():
-            	    deletemessage(row)
+        recvPackage(content)
+        #if 'DATEDPASSTIME' in c.ctx:
+	#    pass
+        #if 'GENERALMESSAGEUPDATE' in c.ctx:
+	#    pass
+        #if 'GENERALMESSAGEDELETE' in c.ctx:
+        #    pass
 
     elif socks.get(kv7) == zmq.POLLIN:
     	data = kv7.recv_json()
