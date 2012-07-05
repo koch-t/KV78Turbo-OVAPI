@@ -12,7 +12,7 @@ from const import ZMQ_KV7
 from twisted.internet import task
 from twisted.internet import reactor
 
-conn = psycopg2.connect("dbname='kv78turbo'")
+conn = psycopg2.connect("dbname='kv78turbo' user='postgres' port='5433'")
 
 sys.stderr.write('Setting up a ZeroMQ PUSH: %s\n' % (ZMQ_KV7))
 context = zmq.Context()
@@ -34,8 +34,8 @@ def time(seconds):
         seconds -= 60*minutes
         return "%02d:%02d:%02d" % (hours, minutes, seconds)
         
-#now = datetime.now() + timedelta(hours=1) - timedelta(seconds=120)
-now = datetime.now() + timedelta(minutes=30) - timedelta(seconds=120) 
+now = datetime.now() + timedelta(hours=1) - timedelta(seconds=120)
+#now = datetime.now() + timedelta(minutes=30) - timedelta(seconds=120) 
 
 def fetchandpushkv7():
 	passes = {}
@@ -43,10 +43,10 @@ def fetchandpushkv7():
 	now += timedelta(seconds=60)
 	startrange = now.strftime("%H:%M:00")
 	startdate = now.strftime("%Y-%m-%d")
-	#endrange = (datetime.now() + timedelta(hours=1)).strftime("%H:%M:00")
-        endrange = (datetime.now() + timedelta(minutes=30)).strftime("%H:%M:00")
-        #now = (datetime.now() + timedelta(hours=1) - timedelta(minutes=1))
-        now = (datetime.now() + timedelta(minutes=30) - timedelta(minutes=1))
+	endrange = (datetime.now() + timedelta(hours=1)).strftime("%H:%M:00")
+        #endrange = (datetime.now() + timedelta(minutes=30)).strftime("%H:%M:00")
+        now = (datetime.now() + timedelta(hours=1) - timedelta(minutes=1))
+        #now = (datetime.now() + timedelta(minutes=30) - timedelta(minutes=1))
         startdate48 = ((now + timedelta(seconds=60))-timedelta(days=1)).strftime("%Y-%m-%d") 
 	if endrange == '00:00:00':
 		endrange = '24:00:00'
@@ -61,6 +61,7 @@ def fetchandpushkv7():
        	cur.execute("select p.dataownercode,p.localservicelevelcode,p.lineplanningnumber,journeynumber,fortifyordernumber,p.userstopcode,userstopordernumber,linedirection, p.destinationcode,targetarrivaltime,targetdeparturetime,sidecode,wheelchairaccessible,journeystoptype,istimingstop,productformulatype,timingpointcode, timingpointdataownercode,operationdate from localservicegrouppasstime as p,  usertimingpoint as u, localservicegroupvalidity as v where exists ( SELECT 1 FROM localservicegrouppasstime  AS f, localservicegroupvalidity as v WHERE f.journeystoptype = 'FIRST' AND f.dataownercode = p.dataownercode AND f.localservicelevelcode = p.localservicelevelcode AND f.lineplanningnumber = p.lineplanningnumber and f.journeynumber = p.journeynumber AND f.fortifyordernumber = p.fortifyordernumber AND ((operationdate = date %s AND targetarrivaltime >= %s AND targetarrivaltime < %s ) OR (operationdate = date %s AND targetarrivaltime >= %s AND targetarrivaltime < %s)) AND f.localservicelevelcode = v.localservicelevelcode AND f.dataownercode = v.dataownercode) AND p.dataownercode = u.dataownercode AND p.userstopcode =  u.userstopcode AND journeystoptype != 'INFOPOINT' AND p.localservicelevelcode = v.localservicelevelcode AND p.dataownercode = v.dataownercode AND ((operationdate = date %s AND targetarrivaltime >= %s and targetarrivaltime < %s) OR (operationdate = date %s AND targetarrivaltime >= %s));", [startdate, startrange,endrange,startdate48,startrange48,endrange48,startdate,startrange,startrange48,startdate48,startrange48])
 	kv7rows = cur.fetchall()
 	passes = {}
+        updatetimestamp = datetime.today().strftime("%Y-%m-%dT%H:%M:%S") + "+02:00"
 	print str(len(kv7rows)) + ' rows from db'
 	for kv7row in kv7rows:
 		row = {}
@@ -87,6 +88,7 @@ def fetchandpushkv7():
 		row['TimingPointCode'] = kv7row[16]
 		row['OperationDate'] = kv7row[18].strftime("%Y-%m-%d")
 		row['TripStopStatus'] = 'PLANNED'
+                row['LastUpdateTimeStamp'] = updatetimestamp
 		pass_id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), str(row['FortifyOrderNumber']), row['UserStopCode'], str(row['UserStopOrderNumber'])])
 		passes[pass_id] = row
 		if (len(passes) > 50):

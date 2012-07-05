@@ -8,8 +8,9 @@ from gzip import GzipFile
 from cStringIO import StringIO
 import psycopg2
 import gc
+from copy import deepcopy
 
-conn = psycopg2.connect("dbname='kv78turbo'")
+conn = psycopg2.connect("dbname='kv78turbo' user='postgres' port='5433'")
 
 tpc_store = {}
 stopareacode_store = {}
@@ -75,12 +76,10 @@ def cleanup():
     	    if 'Passes' in values:
     	    	    for journey, row in values['Passes'].items():
     	    	    	    if now > row['ExpectedArrivalTime'] and now > row['ExpectedDepartureTime']:
-                            	    if 'StopAreaCode' in tpc_store[timingpointcode]['Passes'][journey] and tpc_store[timingpointcode]['Passes'][journey]['StopAreaCode'] != None:
-                            	    	    stopareacode = tpc_store[timingpointcode]['Passes'][journey]['StopAreaCode']
-                            	    	    del(stopareacode_store[stopareacode][timingpointcode]['Passes'][journey])
+                                    stopareacode = tpc_meta[timingpointcode]['StopAreaCode']
+                            	    if stopareacode != None:
+                                        del(stopareacode_store[stopareacode][timingpointcode]['Passes'][journey])
                             	    del(tpc_store[timingpointcode]['Passes'][journey])
-                                    id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), str(row['FortifyOrderNumber'])])
-                                    pass_id = '_'.join([row['UserStopCode'], str(row['UserStopOrderNumber'])])
     for journey_id, values in journey_store.items():
     	    if 'Stops' in values:
     	    	    row = values['Stops'][max(values['Stops'].keys())]
@@ -337,8 +336,8 @@ def queryStopAreas(arguments):
         reply = {}
         for stopareacode in set(arguments[1].split(',')):
             if stopareacode in stopareacode_store and stopareacode != '':
-                reply[stopareacode] = stopareacode_store[stopareacode].copy()
-                for tpc, tpcvalues in stopareacode_store[stopareacode].items():
+                reply[stopareacode] = deepcopy(stopareacode_store[stopareacode])
+                for tpc, tpcvalues in reply[stopareacode].items():
                     reply[stopareacode][tpc]['Passes'] = addMeta(reply[stopareacode][tpc]['Passes'])
         return reply
    	
