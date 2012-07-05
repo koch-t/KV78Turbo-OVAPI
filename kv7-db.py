@@ -34,8 +34,8 @@ def time(seconds):
         seconds -= 60*minutes
         return "%02d:%02d:%02d" % (hours, minutes, seconds)
         
-now = datetime.now() + timedelta(hours=1) - timedelta(seconds=120)
-#now = datetime.now() + timedelta(minutes=30) - timedelta(seconds=120) 
+#now = datetime.now() + timedelta(hours=1) - timedelta(seconds=120)
+now = datetime.now() + timedelta(minutes=30) - timedelta(seconds=120) 
 
 def fetchandpushkv7():
 	passes = {}
@@ -43,10 +43,10 @@ def fetchandpushkv7():
 	now += timedelta(seconds=60)
 	startrange = now.strftime("%H:%M:00")
 	startdate = now.strftime("%Y-%m-%d")
-	endrange = (datetime.now() + timedelta(hours=1)).strftime("%H:%M:00")
-        #endrange = (datetime.now() + timedelta(minutes=30)).strftime("%H:%M:00")
-        now = (datetime.now() + timedelta(hours=1) - timedelta(minutes=1))
-        #now = (datetime.now() + timedelta(minutes=30) - timedelta(minutes=1))
+	#endrange = (datetime.now() + timedelta(hours=1)).strftime("%H:%M:00")
+        endrange = (datetime.now() + timedelta(minutes=30)).strftime("%H:%M:00")
+        #now = (datetime.now() + timedelta(hours=1) - timedelta(minutes=1))
+        now = (datetime.now() + timedelta(minutes=30) - timedelta(minutes=1))
         startdate48 = ((now + timedelta(seconds=60))-timedelta(days=1)).strftime("%Y-%m-%d") 
 	if endrange == '00:00:00':
 		endrange = '24:00:00'
@@ -65,19 +65,21 @@ def fetchandpushkv7():
 	for kv7row in kv7rows:
 		row = {}
 		row['DataOwnerCode'] = kv7row[0]
-		row['LocalServiceLevelCode'] = str(kv7row[1])
+		row['LocalServiceLevelCode'] = kv7row[1]
 		row['LinePlanningNumber'] = kv7row[2]
-		row['JourneyNumber'] = str(kv7row[3])
-		row['FortifyOrderNumber'] = str(kv7row[4])
+		row['JourneyNumber'] = kv7row[3]
+		row['FortifyOrderNumber'] = kv7row[4]
 		row['UserStopCode'] = kv7row[5]
-		row['UserStopOrderNumber'] = str(kv7row[6])
-		row['LineDirection'] = str(kv7row[7])
+		row['UserStopOrderNumber'] = kv7row[6]
+		row['LineDirection'] = int(kv7row[7])
 		row['DestinationCode'] = kv7row[8]
 		row['TargetArrivalTime'] = kv7row[9]
 		row['ExpectedArrivalTime'] = kv7row[9]
 		row['TargetDepartureTime'] = kv7row[10]
 		row['ExpectedDepartureTime'] = kv7row[10]
 		row['SideCode'] = kv7row[11]
+                if row['SideCode'] == '-':
+                    del(row['SideCode'])
 		row['WheelChairAccessible'] = kv7row[12]
 		row['JourneyStopType'] = kv7row[13]
 		row['IsTimingStop'] = kv7row[14]
@@ -85,7 +87,7 @@ def fetchandpushkv7():
 		row['TimingPointCode'] = kv7row[16]
 		row['OperationDate'] = kv7row[18].strftime("%Y-%m-%d")
 		row['TripStopStatus'] = 'PLANNED'
-		pass_id = '_'.join([row['DataOwnerCode'], row['LocalServiceLevelCode'], row['LinePlanningNumber'], row['JourneyNumber'], row['FortifyOrderNumber'], row['UserStopCode'], row['UserStopOrderNumber']])
+		pass_id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), str(row['FortifyOrderNumber']), row['UserStopCode'], str(row['UserStopOrderNumber'])])
 		passes[pass_id] = row
 		if (len(passes) > 50):
 			push.send_json(passes)
