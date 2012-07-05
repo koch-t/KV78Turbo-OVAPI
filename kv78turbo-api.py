@@ -8,7 +8,7 @@ from gzip import GzipFile
 from cStringIO import StringIO
 import psycopg2
 
-conn = psycopg2.connect("dbname='kv78turbo'")
+conn = psycopg2.connect("dbname='kv78turbo' user='postgres' port='5433'")
 
 tpc_store = {}
 stopareacode_store = {}
@@ -52,25 +52,26 @@ cur.close()
 conn.close()
 
 def totimestamp(operationdate, timestamp, row):
-    hours, minutes, seconds = timestamp.split(':')
+    hours, minutes, seconds = timestamp.split(':')   
     years, months, days = operationdate.split('-')
     if hours == 0 and minutes == 0 and seconds == 0:
-        return 0
+        return int(0)
     hours = int(hours)
     if hours >= 48:
         print row
-
     if hours >= 24:
         deltadays  = hours / 24
         hours = hours % 24
         return int((datetime(int(years), int(months), int(days), hours, int(minutes), int(seconds)) + timedelta(days = deltadays)).strftime("%s"))
     else:
         return int(datetime(int(years), int(months), int(days), hours, int(minutes), int(seconds)).strftime("%s"))
-
+ 
 def todate(timestamp):
     return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%dT%H:%M:%S")
 
-def cleanup(): 	    
+def cleanup():
+    print "before " + str(len(kv7cache)) + " memory " + str(sys.getsizeof(kv7cache))
+    print len(kv7cache)    
     now = long((datetime.today() - timedelta(seconds=90)).strftime("%s"))
     for timingpointcode, values in tpc_store.items():
     	    if 'Passes' in values:
@@ -80,7 +81,10 @@ def cleanup():
                             	    	    stopareacode = tpc_store[timingpointcode]['Passes'][journey]['StopAreaCode']
                             	    	    del(stopareacode_store[stopareacode][timingpointcode]['Passes'][journey])
                             	    del(tpc_store[timingpointcode]['Passes'][journey])
-
+                                    id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), str(row['FortifyOrderNumber'])])
+                                    pass_id = '_'.join([row['UserStopCode'], str(row['UserStopOrderNumber'])])
+                                    if id in kv7cache and pass_id in kv7cache[id]:
+                                        del(kv7cache[id][pass_id])
     for journey_id, values in journey_store.items():
     	    if 'Stops' in values:
     	    	    row = values['Stops'][max(values['Stops'].keys())]
@@ -91,8 +95,8 @@ def cleanup():
     	    	    	    if journey_id in journey_store:
     	    	    	    	    del(journey_store[journey_id])
     	    	    	    if journey_id in kv7cache:
-    	    	    	    	    del(kv7cache[journey_id])
-
+                                    del(kv7cache[journey_id])
+    print "after " + str(len(kv7cache)) + " memory " + str(sys.getsizeof(kv7cache))
 def fetchkv7(row):
         try:
                 conn = psycopg2.connect("dbname='kv78turbo' user='postgres' port='5433'")
@@ -153,7 +157,8 @@ def storecurrect(row):
  
     if row['TripStopStatus'] == 'CANCEL' and (id not in kv7cache or pass_id not in kv7cache[id]):
         try:
-    	    fetchkv7(row) 
+    	    #fetchkv7(row) 
+            pass
         except:
             print 'KV7 fetch error'
             pass
@@ -424,13 +429,6 @@ while True:
         multipart = kv8.recv_multipart()
         content = GzipFile('','r',0,StringIO(''.join(multipart[1:]))).read()
         recvPackage(content)
-        #if 'DATEDPASSTIME' in c.ctx:
-	#    pass
-        #if 'GENERALMESSAGEUPDATE' in c.ctx:
-	#    pass
-        #if 'GENERALMESSAGEDELETE' in c.ctx:
-        #    pass
-
     elif socks.get(kv7) == zmq.POLLIN:
     	data = kv7.recv_json()
         for pass_id, row in data.items():

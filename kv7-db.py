@@ -34,8 +34,8 @@ def time(seconds):
         seconds -= 60*minutes
         return "%02d:%02d:%02d" % (hours, minutes, seconds)
         
-now = datetime.now() + timedelta(hours=1) - timedelta(seconds=120)
-#now = datetime.now() + timedelta(minutes=30) - timedelta(seconds=120) 
+#now = datetime.now() + timedelta(hours=1) - timedelta(seconds=120)
+now = datetime.now() + timedelta(minutes=30) - timedelta(seconds=120) 
 
 def fetchandpushkv7():
 	passes = {}
@@ -43,10 +43,10 @@ def fetchandpushkv7():
 	now += timedelta(seconds=60)
 	startrange = now.strftime("%H:%M:00")
 	startdate = now.strftime("%Y-%m-%d")
-	endrange = (datetime.now() + timedelta(hours=1)).strftime("%H:%M:00")
-        #endrange = (datetime.now() + timedelta(minutes=30)).strftime("%H:%M:00")
-        now = (datetime.now() + timedelta(hours=1) - timedelta(minutes=1))
-        #now = (datetime.now() + timedelta(minutes=30) - timedelta(minutes=1))
+	#endrange = (datetime.now() + timedelta(hours=1)).strftime("%H:%M:00")
+        endrange = (datetime.now() + timedelta(minutes=30)).strftime("%H:%M:00")
+        #now = (datetime.now() + timedelta(hours=1) - timedelta(minutes=1))
+        now = (datetime.now() + timedelta(minutes=30) - timedelta(minutes=1))
         startdate48 = ((now + timedelta(seconds=60))-timedelta(days=1)).strftime("%Y-%m-%d") 
 	if endrange == '00:00:00':
 		endrange = '24:00:00'
