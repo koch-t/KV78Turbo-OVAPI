@@ -7,8 +7,9 @@ from time import strftime, gmtime
 from gzip import GzipFile
 from cStringIO import StringIO
 import psycopg2
+import gc
 
-conn = psycopg2.connect("dbname='kv78turbo' user='postgres' port='5433'")
+conn = psycopg2.connect("dbname='kv78turbo'")
 
 tpc_store = {}
 stopareacode_store = {}
@@ -20,7 +21,6 @@ generalmessagestore = {}
 tpc_meta = {}
 line_meta = {}
 destination_meta = {}
-kv7cache = {}
 
 cur = conn.cursor()
 cur.execute("SELECT dataownercode,lineplanningnumber,linepublicnumber,linename,transporttype from line", [])
@@ -70,8 +70,6 @@ def todate(timestamp):
     return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%dT%H:%M:%S")
 
 def cleanup():
-    print "before " + str(len(kv7cache)) + " memory " + str(sys.getsizeof(kv7cache))
-    print len(kv7cache)    
     now = long((datetime.today() - timedelta(seconds=90)).strftime("%s"))
     for timingpointcode, values in tpc_store.items():
     	    if 'Passes' in values:
@@ -83,8 +81,6 @@ def cleanup():
                             	    del(tpc_store[timingpointcode]['Passes'][journey])
                                     id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), str(row['FortifyOrderNumber'])])
                                     pass_id = '_'.join([row['UserStopCode'], str(row['UserStopOrderNumber'])])
-                                    if id in kv7cache and pass_id in kv7cache[id]:
-                                        del(kv7cache[id][pass_id])
     for journey_id, values in journey_store.items():
     	    if 'Stops' in values:
     	    	    row = values['Stops'][max(values['Stops'].keys())]
@@ -94,76 +90,57 @@ def cleanup():
     	    	    	    	    del(line_store[line_id]['Actuals'][journey_id])
     	    	    	    if journey_id in journey_store:
     	    	    	    	    del(journey_store[journey_id])
-    	    	    	    if journey_id in kv7cache:
-                                    del(kv7cache[journey_id])
-    print "after " + str(len(kv7cache)) + " memory " + str(sys.getsizeof(kv7cache))
+
 def fetchkv7(row):
         try:
                 conn = psycopg2.connect("dbname='kv78turbo' user='postgres' port='5433'")
 	except:
                 conn = psycopg2.connect("dbname='kv78turbo' user='postgres' port='5433'")
         id = '_'.join([row['DataOwnerCode'], row['LocalServiceLevelCode'], row['LinePlanningNumber'], row['JourneyNumber'], row['FortifyOrderNumber']])
-	if row['UserStopOrderNumber'] == '1' and row['TripStopStatus'] != 'PASSED':
-		cur = conn.cursor()
-		cur.execute("SELECT userstopordernumber, targetarrivaltime, targetdeparturetime, productformulatype from localservicegrouppasstime as ""p"" WHERE p.dataownercode = %s and localservicelevelcode = %s and journeynumber = %s and fortifyordernumber = %s and p.lineplanningnumber = %s and userstopcode = %s LIMIT 1;", [row['DataOwnerCode'],row['LocalServiceLevelCode'], row['JourneyNumber'], row['FortifyOrderNumber'], row['LinePlanningNumber'], row['UserStopCode']])
-		kv7rows = cur.fetchall()
-		for kv7row in kv7rows:
-			pass_id = '_'.join([row['UserStopCode'], str(kv7row[0])])
-			if id not in kv7cache:
-				kv7cache[id] = {pass_id : {'TargetArrivalTime' : totimestamp(row['OperationDate'], kv7row[1], row)}}
-			else:
-				kv7cache[id][pass_id] = {'TargetArrivalTime' : totimestamp(row['OperationDate'], kv7row[1], row)}
-			kv7cache[id][pass_id]['TargetDepartureTime'] = totimestamp(row['OperationDate'], kv7row[2], row)
-			kv7cache[id][pass_id]['ProductFormulaType'] = kv7row[3]
-                cur.close()	
-        else:
-		cur = conn.cursor()
-		cur.execute("SELECT targetarrivaltime, targetdeparturetime, productformulatype from localservicegrouppasstime as ""p"" WHERE p.dataownercode = %s and localservicelevelcode = %s and journeynumber = %s and fortifyordernumber = %s and p.lineplanningnumber = %s and userstopcode = %s and userstopordernumber = %s LIMIT 1;", [row['DataOwnerCode'],row['LocalServiceLevelCode'], row['JourneyNumber'], row['FortifyOrderNumber'], row['LinePlanningNumber'], row['UserStopCode'], row['UserStopOrderNumber']])
-		kv7rows = cur.fetchall()
-		pass_id = '_'.join([row['UserStopCode'], row['UserStopOrderNumber']])
-		if len(kv7rows) == 0:
-			if id in kv7cache:
-				kv7cache[id][pass_id] = {}
-			else:
-				kv7cache[id] = {pass_id : {}}
-		for kv7row in kv7rows:
-			if id not in kv7cache:
-				kv7cache[id] = {pass_id : {'TargetArrivalTime' : totimestamp(row['OperationDate'], kv7row[0], row)}}
-			else:
-				kv7cache[id][pass_id] = {'TargetArrivalTime' : totimestamp(row['OperationDate'], kv7row[0], row)}
-			kv7cache[id][pass_id]['TargetDepartureTime'] = totimestamp(row['OperationDate'], kv7row[1], row)
-			kv7cache[id][pass_id]['ProductFormulaType'] = kv7row[2]
-                cur.close()
+	cur.execute("SELECT targetarrivaltime, targetdeparturetime, productformulatype from localservicegrouppasstime as ""p"" WHERE p.dataownercode = %s and localservicelevelcode = %s and journeynumber = %s and fortifyordernumber = %s and p.lineplanningnumber = %s and userstopcode = %s and userstopordernumber = %s LIMIT 1;", [row['DataOwnerCode'],row['LocalServiceLevelCode'], row['JourneyNumber'], row['FortifyOrderNumber'], row['LinePlanningNumber'], row['UserStopCode'], row['UserStopOrderNumber']])
+	kv7rows = cur.fetchall()
+	pass_id = '_'.join([row['UserStopCode'], row['UserStopOrderNumber']])
+	if len(kv7rows) == 0:
+                print "Not in KV7 " + id+'_'+pass_id
+	for kv7row in kv7rows:
+		row['TargetArrivalTime']   = totimestamp(row['OperationDate'], kv7row[0], row)
+		row['TargetDepartureTime'] = totimestamp(row['OperationDate'], kv7row[1], row)
+		row['ProductFormulaType']  = kv7row[2]
+        cur.close()
         conn.close()
 
-def storecurrect(row): 	    
-    if row['TripStopStatus'] != 'UNKNOWN' and row['TripStopStatus'] != 'PLANNED': #Keeps status of the dataowners supplying us data
-            last_updatedataownerstore[row['DataOwnerCode']] = row['LastUpdateTimeStamp']
-    elif row['DataOwnerCode'] not in last_updatedataownerstore:
-            last_updatedataownerstore[row['DataOwnerCode']] = 'ERROR'
+def storecurrect(newrow): 	    
+    if newrow['TripStopStatus'] != 'UNKNOWN' and newrow['TripStopStatus'] != 'PLANNED': #Keeps status of the dataowners supplying us data
+            last_updatedataownerstore[newrow['DataOwnerCode']] = newrow['LastUpdateTimeStamp']
+    elif newrow['DataOwnerCode'] not in last_updatedataownerstore:
+            last_updatedataownerstore[newrow['DataOwnerCode']] = 'ERROR'
 
-    if 'LastUpdateTimeStamp' in row:
-        date,time = row['LastUpdateTimeStamp'].split('T')
-        row['LastUpdateTimeStamp'] = totimestamp(date,time[:-6],None)
+    newrow['ExpectedArrivalTime'] = totimestamp(newrow['OperationDate'], newrow['ExpectedArrivalTime'], newrow)
+    newrow['ExpectedDepartureTime'] = totimestamp(newrow['OperationDate'], newrow['ExpectedDepartureTime'], newrow)
 
-    id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), str(row['FortifyOrderNumber'])])
+    if 'LastUpdateTimeStamp' in newrow:
+        date,time = newrow['LastUpdateTimeStamp'].split('T')
+        newrow['LastUpdateTimeStamp'] = totimestamp(date,time[:-6],None)
+
+    id = '_'.join([newrow['DataOwnerCode'], str(newrow['LocalServiceLevelCode']), newrow['LinePlanningNumber'], str(newrow['JourneyNumber']), str(newrow['FortifyOrderNumber'])])
+    if id in journey_store and int(newrow['UserStopOrderNumber']) in journey_store[id]['Stops']:
+        row = journey_store[id]['Stops'][int(newrow['UserStopOrderNumber'])]
+        row.update(newrow)
+    else:
+        row = newrow
+
     line_id = row['DataOwnerCode'] + '_' + row['LinePlanningNumber'] + '_' + str(row['LineDirection'])
     linemeta_id = row['DataOwnerCode'] + '_' + row['LinePlanningNumber']
     destinationmeta_id = row['DataOwnerCode'] + '_' + row['DestinationCode']
     pass_id = '_'.join([row['UserStopCode'], str(row['UserStopOrderNumber'])])
 
-    row['ExpectedArrivalTime'] = totimestamp(row['OperationDate'], row['ExpectedArrivalTime'], row)
-    row['ExpectedDepartureTime'] = totimestamp(row['OperationDate'], row['ExpectedDepartureTime'], row)
- 
-    if row['TripStopStatus'] == 'CANCEL' and (id not in kv7cache or pass_id not in kv7cache[id]):
+    if row['TripStopStatus'] == 'CANCEL' and 'TargetArrivalTime' not in row:
         try:
-    	    #fetchkv7(row) 
+    	    fetchkv7(row) 
             pass
         except:
             print 'KV7 fetch error'
             pass
-    if id in kv7cache and pass_id in kv7cache[id]:
-        row.update(kv7cache[id][pass_id])
 
     for x in ['JourneyNumber', 'FortifyOrderNumber', 'UserStopOrderNumber', 'NumberOfCoaches', 'LocalServiceLevelCode', 'LineDirection']:
         try:
@@ -239,15 +216,6 @@ def storecurrect(row):
 	del(row['SideCode'])
             
 def storeplanned(row):
-    id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), str(row['FortifyOrderNumber'])])
-    pass_id = '_'.join([row['UserStopCode'], str(row['UserStopOrderNumber'])])
-    if id not in kv7cache or pass_id not in kv7cache:
-        if id not in kv7cache:
-            kv7cache[id] = {pass_id : {'TargetArrivalTime' : totimestamp(row['OperationDate'], row['TargetArrivalTime'], row)}}
-        else:
-            kv7cache[id][pass_id] = { 'TargetArrivalTime' : totimestamp(row['OperationDate'], row['TargetArrivalTime'], row)}
-    kv7cache[id][pass_id]['TargetDepartureTime'] = totimestamp(row['OperationDate'], row['TargetDepartureTime'], row)
-    kv7cache[id][pass_id]['ProductFormulaType'] = int(row['ProductFormulaType'])
     row['DataOwnerCode'] = intern(row['DataOwnerCode'])
     row['OperationDate'] = intern(row['OperationDate'])
     row['WheelChairAccessible'] = intern(row['WheelChairAccessible'])
@@ -257,6 +225,8 @@ def storeplanned(row):
     row['TimingPointCode'] = intern(row['TimingPointCode'])
     row['LinePlanningNumber'] = intern(row['LinePlanningNumber'])
     row['TripStopStatus'] = intern(row['TripStopStatus'])
+    row['TargetArrivalTime'] = totimestamp(row['OperationDate'], row['TargetArrivalTime'], row)
+    row['TargetDepartureTime'] = totimestamp(row['OperationDate'], row['TargetDepartureTime'], row)
     if 'SideCode' in row and row['SideCode'] == '-':
         del(row['SideCode'])
     elif 'SideCode' in row:
