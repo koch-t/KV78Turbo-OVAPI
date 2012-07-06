@@ -10,7 +10,7 @@ import psycopg2
 import gc
 from copy import deepcopy
 
-conn = psycopg2.connect("dbname='kv78turbo' user='postgres' port='5433'")
+conn = psycopg2.connect("dbname='kv78turbo'")
 
 tpc_store = {}
 stopareacode_store = {}
@@ -76,9 +76,6 @@ def cleanup():
     	    if 'Passes' in values:
     	    	    for journey, row in values['Passes'].items():
     	    	    	    if now > row['ExpectedArrivalTime'] and now > row['ExpectedDepartureTime']:
-                                    stopareacode = tpc_meta[timingpointcode]['StopAreaCode']
-                            	    if stopareacode != None:
-                                        del(stopareacode_store[stopareacode][timingpointcode]['Passes'][journey])
                             	    del(tpc_store[timingpointcode]['Passes'][journey])
     for journey_id, values in journey_store.items():
     	    if 'Stops' in values:
@@ -92,9 +89,9 @@ def cleanup():
 
 def fetchkv7(row):
         try:
-                conn = psycopg2.connect("dbname='kv78turbo' user='postgres' port='5433'")
+                conn = psycopg2.connect("dbname='kv78turbo'")
 	except:
-                conn = psycopg2.connect("dbname='kv78turbo' user='postgres' port='5433'")
+                conn = psycopg2.connect("dbname='kv78turbo'")
         id = '_'.join([row['DataOwnerCode'], row['LocalServiceLevelCode'], row['LinePlanningNumber'], row['JourneyNumber'], row['FortifyOrderNumber']])
 	cur.execute("SELECT targetarrivaltime, targetdeparturetime, productformulatype from localservicegrouppasstime as ""p"" WHERE p.dataownercode = %s and localservicelevelcode = %s and journeynumber = %s and fortifyordernumber = %s and p.lineplanningnumber = %s and userstopcode = %s and userstopordernumber = %s LIMIT 1;", [row['DataOwnerCode'],row['LocalServiceLevelCode'], row['JourneyNumber'], row['FortifyOrderNumber'], row['LinePlanningNumber'], row['UserStopCode'], row['UserStopOrderNumber']])
 	kv7rows = cur.fetchall()
@@ -135,8 +132,7 @@ def storecurrect(newrow):
 
     if row['TripStopStatus'] == 'CANCEL' and 'TargetArrivalTime' not in row:
         try:
-    	    fetchkv7(row) 
-            pass
+    	    fetchkv7(row)
         except:
             print 'KV7 fetch error'
             pass
@@ -163,11 +159,9 @@ def storecurrect(newrow):
         stopareacode = tpc_meta[row['TimingPointCode']]['StopAreaCode']
         if stopareacode != None:
     	    if stopareacode not in stopareacode_store:
-    	    	    stopareacode_store[stopareacode] = { row['TimingPointCode'] : {'Passes' : {id : row }}}
+    	    	    stopareacode_store[stopareacode] = { row['TimingPointCode'] : True}
     	    elif row['TimingPointCode'] not in stopareacode_store[stopareacode]:
-    	    	    stopareacode_store[stopareacode][row['TimingPointCode']] = {'Passes' : {id : row }}
-    	    else:
-    	    	    stopareacode_store[stopareacode][row['TimingPointCode']]['Passes'][id] = row    	 
+    	    	    stopareacode_store[stopareacode][row['TimingPointCode']] = True
     
     if line_id not in line_store:
     	line_store[line_id] = {'Network': {}, 'Actuals': {}, 'Line' : {}}
@@ -306,6 +300,7 @@ def queryTimingPoints(arguments):
                     if tpc in reply:
                         reply[tpc]['Stop'] = tpc_meta[tpc]
                     else:
+    	    	        reply[tpc] = {'Stop' : tpc_meta[tpc], 'GeneralMessages' : {}, 'Passes' : {}}
     	    	        tpc_store[tpc] = {'Stop' : tpc_meta[tpc], 'GeneralMessages' : {}, 'Passes' : {}}
             return reply
 
@@ -338,7 +333,15 @@ def queryStopAreas(arguments):
             if stopareacode in stopareacode_store and stopareacode != '':
                 reply[stopareacode] = deepcopy(stopareacode_store[stopareacode])
                 for tpc, tpcvalues in reply[stopareacode].items():
-                    reply[stopareacode][tpc]['Passes'] = addMeta(reply[stopareacode][tpc]['Passes'])
+                    if tpc in tpc_store and tpc != '':
+                        reply[stopareacode][tpc] = tpc_store[tpc].copy()
+                        reply[stopareacode][tpc]['Passes'] = addMeta(reply[stopareacode][tpc]['Passes'])
+                        if tpc in tpc_meta:
+                            if tpc in reply:
+                                reply[stopareacode][tpc]['Stop'] = tpc_meta[tpc]
+                        else:
+    	    	            reply[stopareacode][tpc] = {'Stop' : tpc_meta[tpc], 'GeneralMessages' : {}, 'Passes' : {}}
+    	    	            tpc_store[tpc] = {'Stop' : tpc_meta[tpc], 'GeneralMessages' : {}, 'Passes' : {}}
         return reply
    	
 def queryLines(arguments):
