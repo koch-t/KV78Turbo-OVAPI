@@ -86,7 +86,7 @@ def cleanup():
     	    	 del(journey_store[journey_id])
         row = values['Stops'][min(values['Stops'].keys())]
         if (row['TripStopStatus'] == 'UNKNOWN' or row['TripStopStatus'] == 'PLANNED') and now > row['ExpectedArrivalTime'] and now > row['ExpectedDepartureTime']:
-            del(journey_store[journey]['Stops'][row['UserStopOrderNumber']])
+            del(journey_store[journey_id]['Stops'][row['UserStopOrderNumber']])
 
 def fetchkv7(row):
         try:
