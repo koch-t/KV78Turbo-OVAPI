@@ -15,7 +15,7 @@ tpc_store = {}
 stopareacode_store = {}
 line_store = {}
 journey_store = {}
-last_updatedataownerstore = {}
+last_updatestore = {'DataOwner' : {}, 'Subscription' : {}}
 generalmessagestore = {}
 
 tpc_meta = {}
@@ -110,11 +110,6 @@ def fetchkv7(row):
         conn.close()
 
 def storecurrect(newrow): 	    
-    if newrow['TripStopStatus'] != 'UNKNOWN' and newrow['TripStopStatus'] != 'PLANNED': #Keeps status of the dataowners supplying us data
-            last_updatedataownerstore[newrow['DataOwnerCode']] = newrow['LastUpdateTimeStamp']
-    elif newrow['DataOwnerCode'] not in last_updatedataownerstore:
-            last_updatedataownerstore[newrow['DataOwnerCode']] = 'ERROR'
-
     newrow['ExpectedArrivalTime'] = totimestamp(newrow['OperationDate'], newrow['ExpectedArrivalTime'], newrow)
     newrow['ExpectedDepartureTime'] = totimestamp(newrow['OperationDate'], newrow['ExpectedDepartureTime'], newrow)
 
@@ -213,15 +208,6 @@ def storecurrect(newrow):
 	del(row['SideCode'])
             
 def storeplanned(row):
-    row['DataOwnerCode'] = intern(row['DataOwnerCode'])
-    row['OperationDate'] = intern(row['OperationDate'])
-    row['WheelChairAccessible'] = intern(row['WheelChairAccessible'])
-    row['JourneyStopType'] = intern(row['JourneyStopType'])
-    row['UserStopCode'] = intern(row['UserStopCode'])
-    row['DestinationCode'] = intern(row['DestinationCode'])
-    row['TimingPointCode'] = intern(row['TimingPointCode'])
-    row['LinePlanningNumber'] = intern(row['LinePlanningNumber'])
-    row['TripStopStatus'] = intern(row['TripStopStatus'])
     row['TargetArrivalTime'] = totimestamp(row['OperationDate'], row['TargetArrivalTime'], row)
     row['TargetDepartureTime'] = totimestamp(row['OperationDate'], row['TargetDepartureTime'], row)
     if 'SideCode' in row and row['SideCode'] == '-':
@@ -370,7 +356,7 @@ def recvPackage(content):
         if line[0] == '\\':
                 # control characters
             if line[1] == 'G':
-                label, Name, Comment, Path, Endian, Enc, Res1, TimeStamp, _ = line[2:].split('|')
+                label, name, subscription, path, endian, enc, res1, timestamp, _ = line[2:].split('|')
             elif line[1] == 'T':
                 type = line[2:].split('|')[1]
             elif line[1] == 'L':
@@ -390,6 +376,13 @@ def recvPackage(content):
                 if x in row and row[x] is None:
                     del(row[x])
             if type == 'DATEDPASSTIME':
+                if row['TripStopStatus'] != 'UNKNOWN' and row['TripStopStatus'] != 'PLANNED': #Keeps status of the dataowners supplying us data
+                    last_updatestore['DataOwner'][row['DataOwnerCode']] = row['LastUpdateTimeStamp']
+                    last_updatestore['Subscription'][subscription] = row['LastUpdateTimeStamp']
+                elif row['DataOwnerCode'] not in last_updatestore['DataOwner']:
+                    last_updatestore['DataOwner'][row['DataOwnerCode']] = 'ERROR'
+                if subscription not in last_updatestore['Subscription']:
+                    last_updatestore['Subscription'][subscription] = 'ERROR'
                 storecurrect(row)
             elif type == 'GENERALMESSAGEUPDATE':
                 print 'GENERAL MESSAGE UPDATE'
@@ -426,7 +419,7 @@ while True:
             reply = queryLines(arguments)
             client.send_json(reply)
         elif arguments[0] == 'lastupdate':
-            reply = {'LastUpdateTimeStamps' : last_updatedataownerstore, 'ServerTime' : strftime("%Y-%m-%dT%H:%M:%SZ",gmtime())}
+            reply = {'LastUpdateTimeStamps' : last_updatestore, 'ServerTime' : strftime("%Y-%m-%dT%H:%M:%SZ",gmtime())}
             client.send_json(reply)
             
         elif arguments[0] == 'generalmessage':
