@@ -7,7 +7,6 @@ from time import strftime, gmtime
 from gzip import GzipFile
 from cStringIO import StringIO
 import psycopg2
-import gc
 from copy import deepcopy
 
 conn = psycopg2.connect("dbname='kv78turbo'")
@@ -76,17 +75,21 @@ def cleanup():
         for journey, row in values['Passes'].items():
             if now > row['ExpectedArrivalTime'] and now > row['ExpectedDepartureTime']:
                 del(tpc_store[timingpointcode]['Passes'][journey])
+                if row['TripStopStatus'] == 'PLANNED' or row['TripStopStatus'] == 'UNKNOWN':
+                    userstoporder = row['UserStopOrderNumber']
+                    if journey in journey_store and userstoporder in journey_store[journey]['Stops']:
+                        if len(journey_store[journey]['Stops']) > 1:
+                            del(journey_store[journey]['Stops'][userstoporder])
+                        else:
+                            del(journey_store[journey])
     for journey_id, values in journey_store.items():
         row = values['Stops'][max(values['Stops'].keys())]
         if now > row['ExpectedArrivalTime'] and now > row['ExpectedDepartureTime']:
-           line_id = row['DataOwnerCode'] + '_' + row['LinePlanningNumber'] + '_' + str(row['LineDirection'])
-    	  if line_id in line_store and journey_id in line_store[line_id]['Actuals']:
-    	      del(line_store[line_id]['Actuals'][journey_id])
-    	  if journey_id in journey_store:
-    	      del(journey_store[journey_id])
-        row = values['Stops'][min(values['Stops'].keys())]
-        if (row['TripStopStatus'] == 'UNKNOWN' or row['TripStopStatus'] == 'PLANNED') and now > row['ExpectedArrivalTime'] and now > row['ExpectedDepartureTime']:
-            del(journey_store[journey_id]['Stops'][row['UserStopOrderNumber']])
+            line_id = row['DataOwnerCode'] + '_' + row['LinePlanningNumber'] + '_' + str(row['LineDirection'])
+    	    if line_id in line_store and journey_id in line_store[line_id]['Actuals']:
+    	        del(line_store[line_id]['Actuals'][journey_id])
+    	    if journey_id in journey_store:
+    	        del(journey_store[journey_id])
 
 def fetchkv7(row):
         try:
