@@ -80,10 +80,10 @@ def cleanup():
         row = values['Stops'][max(values['Stops'].keys())]
         if now > row['ExpectedArrivalTime'] and now > row['ExpectedDepartureTime']:
            line_id = row['DataOwnerCode'] + '_' + row['LinePlanningNumber'] + '_' + str(row['LineDirection'])
-    	      if line_id in line_store and journey_id in line_store[line_id]['Actuals']:
-    	          del(line_store[line_id]['Actuals'][journey_id])
-    	      if journey_id in journey_store:
-    	    	 del(journey_store[journey_id])
+    	  if line_id in line_store and journey_id in line_store[line_id]['Actuals']:
+    	      del(line_store[line_id]['Actuals'][journey_id])
+    	  if journey_id in journey_store:
+    	      del(journey_store[journey_id])
         row = values['Stops'][min(values['Stops'].keys())]
         if (row['TripStopStatus'] == 'UNKNOWN' or row['TripStopStatus'] == 'PLANNED') and now > row['ExpectedArrivalTime'] and now > row['ExpectedDepartureTime']:
             del(journey_store[journey_id]['Stops'][row['UserStopOrderNumber']])
