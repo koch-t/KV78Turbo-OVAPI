@@ -78,6 +78,9 @@ def cleanup():
                 if row['TripStopStatus'] == 'PLANNED' or row['TripStopStatus'] == 'UNKNOWN':
                     userstoporder = row['UserStopOrderNumber']
                     if journey in journey_store and userstoporder in journey_store[journey]['Stops']:
+                    	line_id = row['DataOwnerCode'] + '_' + row['LinePlanningNumber'] + '_' + str(row['LineDirection'])
+    	                if line_id in line_store and journey_id in line_store[line_id]['Actuals']:
+    	                    del(line_store[line_id]['Actuals'][journey_id])
                         if len(journey_store[journey]['Stops']) > 1:
                             del(journey_store[journey]['Stops'][userstoporder])
                         else:
