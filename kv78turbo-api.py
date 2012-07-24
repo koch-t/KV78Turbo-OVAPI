@@ -79,8 +79,8 @@ def cleanup():
                     userstoporder = row['UserStopOrderNumber']
                     if journey in journey_store and userstoporder in journey_store[journey]['Stops']:
                     	line_id = row['DataOwnerCode'] + '_' + row['LinePlanningNumber'] + '_' + str(row['LineDirection'])
-    	                if line_id in line_store and journey_id in line_store[line_id]['Actuals']:
-    	                    del(line_store[line_id]['Actuals'][journey_id])
+    	                if line_id in line_store and journey in line_store[line_id]['Actuals']:
+    	                    del(line_store[line_id]['Actuals'][journey])
                         if len(journey_store[journey]['Stops']) > 1:
                             del(journey_store[journey]['Stops'][userstoporder])
                         else:
@@ -98,8 +98,10 @@ def fetchkv7(row):
         try:
                 conn = psycopg2.connect("dbname='kv78turbo'")
 	except:
-                conn = psycopg2.connect("dbname='kv78turbo'")
-        id = '_'.join([row['DataOwnerCode'], row['LocalServiceLevelCode'], row['LinePlanningNumber'], row['JourneyNumber'], row['FortifyOrderNumber']])
+                conn = psycopg2.connect("dbname='kv78turbo1'")
+        cur = conn.cursor()
+        id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), 
+str(row['FortifyOrderNumber'])])
 	cur.execute("SELECT targetarrivaltime, targetdeparturetime, productformulatype from localservicegrouppasstime as ""p"" WHERE p.dataownercode = %s and localservicelevelcode = %s and journeynumber = %s and fortifyordernumber = %s and p.lineplanningnumber = %s and userstopcode = %s and userstopordernumber = %s LIMIT 1;", [row['DataOwnerCode'],row['LocalServiceLevelCode'], row['JourneyNumber'], row['FortifyOrderNumber'], row['LinePlanningNumber'], row['UserStopCode'], row['UserStopOrderNumber']])
 	kv7rows = cur.fetchall()
 	pass_id = '_'.join([row['UserStopCode'], row['UserStopOrderNumber']])
@@ -112,17 +114,36 @@ def fetchkv7(row):
         cur.close()
         conn.close()
 
+def setDelayIncrease(oldrow,newrow):
+    if newrow['TripStopStatus'] == 'DRIVING' and oldrow['TripStopStatus'] != 'PLANNED' and 'TargetArrivalTime' in oldrow and oldrow['JourneyStopType'] != 'LAST':
+        targetdeparture = oldrow['TargetDepartureTime']
+        timediff = (newrow['LastUpdateTimeStamp'] - oldrow['LastUpdateTimeStamp'])
+        olddelay = (oldrow['ExpectedDepartureTime'] - targetdeparture)
+        newdelay = (newrow['ExpectedDepartureTime'] - targetdeparture)
+        delaydiff = (newdelay - olddelay)
+        if delaydiff > timediff and newdelay > 60:
+            oldrow['JourneyDisrupted'] = True
+            return
+    if 'JourneyDisrupted' in oldrow:
+        del(oldrow['JourneyDisrupted'])
+
 def storecurrect(newrow): 	    
     newrow['ExpectedArrivalTime'] = totimestamp(newrow['OperationDate'], newrow['ExpectedArrivalTime'], newrow)
     newrow['ExpectedDepartureTime'] = totimestamp(newrow['OperationDate'], newrow['ExpectedDepartureTime'], newrow)
 
     if 'LastUpdateTimeStamp' in newrow:
         date,time = newrow['LastUpdateTimeStamp'].split('T')
-        newrow['LastUpdateTimeStamp'] = totimestamp(date,time[:-6],None)
-
+        try: 
+            newrow['LastUpdateTimeStamp'] = totimestamp(date,time[:-6],None)
+        except:
+            print newrow['LastUpdateTimeStamp']
+            pass
     id = '_'.join([newrow['DataOwnerCode'], str(newrow['LocalServiceLevelCode']), newrow['LinePlanningNumber'], str(newrow['JourneyNumber']), str(newrow['FortifyOrderNumber'])])
     if id in journey_store and int(newrow['UserStopOrderNumber']) in journey_store[id]['Stops']:
         row = journey_store[id]['Stops'][int(newrow['UserStopOrderNumber'])]
+        if row['TripStopStatus'] == 'CANCEL' and newrow['TripStopStatus'] == 'PLANNED':
+            newrow['TripStopStatus'] == 'CANCEL'
+        setDelayIncrease(row,newrow)
         row.update(newrow)
     else:
         row = newrow
@@ -132,11 +153,11 @@ def storecurrect(newrow):
     destinationmeta_id = row['DataOwnerCode'] + '_' + row['DestinationCode']
     pass_id = '_'.join([row['UserStopCode'], str(row['UserStopOrderNumber'])])
 
-    if row['TripStopStatus'] == 'CANCEL' and 'TargetArrivalTime' not in row:
-        try:
+    if newrow['TripStopStatus'] == 'CANCEL' and 'TargetArrivalTime' not in row:
+       try:
     	    fetchkv7(row)
-        except:
-            print 'KV7 fetch error'
+       except Exception as e:
+            print e
             pass
 
     for x in ['JourneyNumber', 'FortifyOrderNumber', 'UserStopOrderNumber', 'NumberOfCoaches', 'LocalServiceLevelCode', 'LineDirection']:
@@ -261,7 +282,7 @@ def addMeta(passtimes):
         if linemeta_id in line_meta:
             result[key].update(line_meta[linemeta_id])
         destinationmeta_id = values['DataOwnerCode'] + '_' + values['DestinationCode']
-        if destination_id in destination_meta:
+        if destinationmeta_id in destination_meta:
             result[key]['DestinationName50'] = destination_meta[destinationmeta_id]
         timingpointcode = values['TimingPointCode']
         if timingpointcode in tpc_meta:
@@ -288,6 +309,7 @@ def queryTimingPoints(arguments):
             for tpc in set(arguments[1].split(',')):
                 if tpc in tpc_store and tpc != '':
                         reply[tpc] = tpc_store[tpc].copy()
+                        #reply[tpc]['ServerTime'] = strftime("%Y-%m-%dT%H:%M:%SZ",gmtime())
                         reply[tpc]['Passes'] = addMeta(reply[tpc]['Passes'])
                 if tpc in tpc_meta and tpc != '':
                     if tpc in reply:
@@ -309,6 +331,7 @@ def queryJourneys(arguments):
             if journey in journey_store:
                 if journey != '':
                     reply[journey] = journey_store[journey].copy()
+                    reply[journey]['ServerTime'] = strftime("%Y-%m-%dT%H:%M:%SZ",gmtime())
                     reply[journey]['Stops'] = addMeta(reply[journey]['Stops'])
         return reply
 
@@ -321,10 +344,11 @@ def queryStopAreas(arguments):
                     reply[stopareacode] = tpc_meta[tpc]
         return reply
     else:
-        reply = {}
+        reply = {} 
         for stopareacode in set(arguments[1].split(',')):
             if stopareacode in stopareacode_store and stopareacode != '':
                 reply[stopareacode] = deepcopy(stopareacode_store[stopareacode])
+                reply[stopareacode]['ServerTime'] = strftime("%Y-%m-%dT%H:%M:%SZ",gmtime())
                 for tpc, tpcvalues in reply[stopareacode].items():
                     if tpc in tpc_store and tpc != '':
                         reply[stopareacode][tpc] = tpc_store[tpc].copy()
@@ -351,6 +375,7 @@ def queryLines(arguments):
         for line in set(arguments[1].split(',')):
             if line in line_store and line != '':
                 reply[line] = line_store[line].copy()
+                reply[line]['ServerTime'] = strftime("%Y-%m-%dT%H:%M:%SZ",gmtime())
                 reply[line]['Actuals'] = addMeta(reply[line]['Actuals'])
         return reply
 
@@ -393,6 +418,8 @@ def recvPackage(content):
             elif type == 'GENERALMESSAGEDELETE':
                 print 'GENERAL MESSAGE DELETE'
                 deletemessage(row)
+            else:
+                print 'UNKNOWN TYPE : !!!!!' +  type
 
 while True:
     socks = dict(poller.poll())
