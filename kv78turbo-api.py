@@ -94,28 +94,8 @@ def cleanup():
     	    if journey_id in journey_store:
     	        del(journey_store[journey_id])
 
-def fetchkv7(row):
-        try:
-                conn = psycopg2.connect("dbname='kv78turbo'")
-	except:
-                conn = psycopg2.connect("dbname='kv78turbo1'")
-        cur = conn.cursor()
-        id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), 
-str(row['FortifyOrderNumber'])])
-	cur.execute("SELECT targetarrivaltime, targetdeparturetime, productformulatype from localservicegrouppasstime as ""p"" WHERE p.dataownercode = %s and localservicelevelcode = %s and journeynumber = %s and fortifyordernumber = %s and p.lineplanningnumber = %s and userstopcode = %s and userstopordernumber = %s LIMIT 1;", [row['DataOwnerCode'],row['LocalServiceLevelCode'], row['JourneyNumber'], row['FortifyOrderNumber'], row['LinePlanningNumber'], row['UserStopCode'], row['UserStopOrderNumber']])
-	kv7rows = cur.fetchall()
-	pass_id = '_'.join([row['UserStopCode'], row['UserStopOrderNumber']])
-	if len(kv7rows) == 0:
-                print "Not in KV7 " + id+'_'+pass_id
-	for kv7row in kv7rows:
-		row['TargetArrivalTime']   = totimestamp(row['OperationDate'], kv7row[0], row)
-		row['TargetDepartureTime'] = totimestamp(row['OperationDate'], kv7row[1], row)
-		row['ProductFormulaType']  = kv7row[2]
-        cur.close()
-        conn.close()
-
 def setDelayIncrease(oldrow,newrow):
-    if newrow['TripStopStatus'] == 'DRIVING' and oldrow['TripStopStatus'] != 'PLANNED' and 'TargetArrivalTime' in oldrow and oldrow['JourneyStopType'] != 'LAST':
+    if newrow['TripStopStatus'] == 'DRIVING' and oldrow['TripStopStatus'] != 'PLANNED' and oldrow['JourneyStopType'] != 'LAST':
         targetdeparture = oldrow['TargetDepartureTime']
         timediff = (newrow['LastUpdateTimeStamp'] - oldrow['LastUpdateTimeStamp'])
         olddelay = (oldrow['ExpectedDepartureTime'] - targetdeparture)
@@ -130,7 +110,8 @@ def setDelayIncrease(oldrow,newrow):
 def storecurrect(newrow): 	    
     newrow['ExpectedArrivalTime'] = totimestamp(newrow['OperationDate'], newrow['ExpectedArrivalTime'], newrow)
     newrow['ExpectedDepartureTime'] = totimestamp(newrow['OperationDate'], newrow['ExpectedDepartureTime'], newrow)
-
+    newrow['TargetArrivalTime'] = totimestamp(newrow['OperationDate'], newrow['TargetArrivalTime'], newrow)
+    newrow['TargetDepartureTime'] = totimestamp(newrow['OperationDate'], newrow['TargetDepartureTime'], newrow)
     if 'LastUpdateTimeStamp' in newrow:
         date,time = newrow['LastUpdateTimeStamp'].split('T')
         try: 
@@ -152,13 +133,6 @@ def storecurrect(newrow):
     linemeta_id = row['DataOwnerCode'] + '_' + row['LinePlanningNumber']
     destinationmeta_id = row['DataOwnerCode'] + '_' + row['DestinationCode']
     pass_id = '_'.join([row['UserStopCode'], str(row['UserStopOrderNumber'])])
-
-    if newrow['TripStopStatus'] == 'CANCEL' and 'TargetArrivalTime' not in row:
-       try:
-    	    fetchkv7(row)
-       except Exception as e:
-            print e
-            pass
 
     for x in ['JourneyNumber', 'FortifyOrderNumber', 'UserStopOrderNumber', 'NumberOfCoaches', 'LocalServiceLevelCode', 'LineDirection']:
         try:
@@ -232,8 +206,6 @@ def storecurrect(newrow):
 	del(row['SideCode'])
             
 def storeplanned(row):
-    row['TargetArrivalTime'] = totimestamp(row['OperationDate'], row['TargetArrivalTime'], row)
-    row['TargetDepartureTime'] = totimestamp(row['OperationDate'], row['TargetDepartureTime'], row)
     if 'SideCode' in row and row['SideCode'] == '-':
         del(row['SideCode'])
     elif 'SideCode' in row:
@@ -394,7 +366,7 @@ def recvPackage(content):
             values = line.split('|')
             for k,v in map(None, keys, values):
                 if v == '\\0':
-                    v = None
+                    row[k] = None
                 else:              
                     row[k] = v
             if row['TripStopStatus'] == 'CANCEL':
