@@ -85,12 +85,28 @@ class RRD(object):
         cmd = os.popen4(cmd_graph)
         for fd in cmd: fd.close()
 
+    def graph78stefan(self):
+        output_filename = self.rrd_name[:-4] + '.png'
+        width = '300'
+        height = '75'
+        cur_date = time.strftime('%m/%d/%Y %H\:%M\:%S', time.localtime())
+        cmd_graph = 'rrdtool graph /var/ovapi/www/stats/' + output_filename \
+                    + ' -a PNG --vertical-label "'+self.rrd_name[:-4]+' upd/s"' \
+                    + ' --width '+width+' --height '+height+' --start end-2d' \
+                    + ' DEF:Updates='+self.rrd_name+':updates:AVERAGE' \
+                    + ' DEF:PASSED='+self.rrd_name+':passed:AVERAGE' \
+                    + ' AREA:Updates#FFFF00' \
+                    + ' AREA:PASSED#009900'
+        cmd = os.popen4(cmd_graph)
+        for fd in cmd: fd.close()
+
+
     def graph(self, mins):       
         start_time = 'now-%s' % (mins * 60)  
         output_filename = self.rrd_name + '.png'
         end_time = 'now'
         ds_name = 'test'
-        width = '400'
+        width = '300'
         height = '150'
         cur_date = time.strftime('%m/%d/%Y %H\:%M\:%S', time.localtime())       
         cmd_graph = 'rrdtool graph ' + output_filename + \
