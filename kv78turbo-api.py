@@ -9,7 +9,7 @@ from cStringIO import StringIO
 import psycopg2
 from copy import deepcopy
 
-conn = psycopg2.connect("dbname='kv78turbo'")
+conn = psycopg2.connect("dbname='kv78turbo1'")
 
 tpc_store = {}
 stopareacode_store = {}
@@ -134,7 +134,7 @@ def storecurrect(newrow):
     destinationmeta_id = row['DataOwnerCode'] + '_' + row['DestinationCode']
     pass_id = '_'.join([row['UserStopCode'], str(row['UserStopOrderNumber'])])
 
-    for x in ['JourneyNumber', 'FortifyOrderNumber', 'UserStopOrderNumber', 'NumberOfCoaches', 'LocalServiceLevelCode', 'LineDirection']:
+    for x in ['JourneyPatternCode', 'JourneyNumber', 'FortifyOrderNumber', 'UserStopOrderNumber', 'NumberOfCoaches', 'LocalServiceLevelCode', 'LineDirection']:
         try:
             if x in row and row[x] is not None and row[x] != 'UNKNOWN':
 	        row[x] = int(row[x])
@@ -170,15 +170,17 @@ def storecurrect(newrow):
     
     if destinationmeta_id in destination_meta:
         line_store[line_id]['Line']['DestinationName50'] = destination_meta[destinationmeta_id]      
-        		
-    if row['UserStopOrderNumber'] not in line_store[line_id]['Network']:
-        line_store[line_id]['Network'][row['UserStopOrderNumber']] = {
+    
+    if row['JourneyPatternCode'] not in line_store[line_id]['Network']:
+        line_store[line_id]['Network'][row['JourneyPatternCode']] = {}
+    if row['UserStopOrderNumber'] not in line_store[line_id]['Network'][row['JourneyPatternCode']]:
+        line_store[line_id]['Network'][row['JourneyPatternCode']][row['UserStopOrderNumber']] = {
             'TimingPointCode': row['TimingPointCode'],
             'IsTimingStop': row['IsTimingStop'],
             'UserStopOrderNumber':row['UserStopOrderNumber']
             }
         if row['TimingPointCode'] in tpc_meta:
-            line_store[line_id]['Network'][row['UserStopOrderNumber']].update(tpc_meta[row['TimingPointCode']]) 
+            line_store[line_id]['Network'][row['JourneyPatternCode']][row['UserStopOrderNumber']].update(tpc_meta[row['TimingPointCode']]) 
     if id not in journey_store:
     	journey_store[id] = {'Stops' : {row['UserStopOrderNumber']: row}}
     else:
@@ -261,10 +263,8 @@ def addMeta(passtimes):
             result[key].update(tpc_meta[timingpointcode])
         result[key]['ExpectedDepartureTime'] = todate(result[key]['ExpectedDepartureTime'])
         result[key]['ExpectedArrivalTime'] = todate(result[key]['ExpectedArrivalTime'])
-        if 'TargetDepartureTime' in values:
-            result[key]['TargetDepartureTime'] = todate(result[key]['TargetDepartureTime'])
-        if 'TargetArrivalTime' in values:
-            result[key]['TargetArrivalTime'] = todate(result[key]['TargetArrivalTime'])
+        result[key]['TargetDepartureTime'] = todate(result[key]['TargetDepartureTime'])
+        result[key]['TargetArrivalTime'] = todate(result[key]['TargetArrivalTime'])
         if 'LastUpdateTimeStamp' in values:
             result[key]['LastUpdateTimeStamp'] = todate(result[key]['LastUpdateTimeStamp'])
     return result
@@ -371,10 +371,11 @@ def recvPackage(content):
                     row[k] = v
             if row['TripStopStatus'] == 'CANCEL':
                 print 'XCANCEL'+ row['LastUpdateTimeStamp'] + '  ' + row['ExpectedArrivalTime']
-                print content
             for x in ['ReasonType', 'AdviceType', 'AdviceContent','SubAdviceType','MessageType','ReasonContent','OperatorCode', 'SubReasonType', 'MessageContent']:
                 if x in row and row[x] is None:
                     del(row[x])
+            if row['JourneyPatternCode'] == '':
+                row['JourneyPatternCode'] = 0
             if type == 'DATEDPASSTIME':
                 if row['TripStopStatus'] != 'UNKNOWN' and row['TripStopStatus'] != 'PLANNED': #Keeps status of the dataowners supplying us data
                     last_updatestore['DataOwner'][row['DataOwnerCode']] = row['LastUpdateTimeStamp']
@@ -383,7 +384,8 @@ def recvPackage(content):
                     last_updatestore['DataOwner'][row['DataOwnerCode']] = 'ERROR'
                 if subscription not in last_updatestore['Subscription']:
                     last_updatestore['Subscription'][subscription] = 'ERROR'
-                storecurrect(row)
+                if row['JourneyStopType'] != 'INFOPOINT':
+                    storecurrect(row)
             elif type == 'GENERALMESSAGEUPDATE':
                 print 'GENERAL MESSAGE UPDATE'
                 storemessage(row)
