@@ -1,6 +1,17 @@
-cs > centraal station
+cs > centraal
+centrum > cs
+Centraal Station > CS
+Centraal Station > Amsterdam CS
 ns > station
 busst. > busstation
 Den Bosch > 's-Hertogenbosch
 burg. > burgemeester
 pr. > prins
+str. > straat
+1e > eerste
+2e > tweede
+3e > derde
+4e > vierde
+Adm. > admiraal
+HS > Hollands Spoor
+
