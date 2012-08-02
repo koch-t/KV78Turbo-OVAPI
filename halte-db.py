@@ -7,12 +7,11 @@ import re
 
 COMMON_HEADERS = [('Content-Type', 'application/json'), ('Access-Control-Allow-Origin', '*'), ('Access-Control-Allow-Headers', 'Requested-With,Content-Type')]
 
-conn = psycopg2.connect("dbname='haltes' user='postgres' password='postgres' port='5433'")
+conn = psycopg2.connect("dbname='haltes'")
 cl = SphinxClient()
 cl.SetServer('localhost', 9312)
 cl.SetWeights ( [100, 1] )
 cl.SetMatchMode ( SPH_MATCH_EXTENDED )
-
 
 #update timingpoint set latitude = CAST(ST_Y(the_geom) AS NUMERIC(9,7)), longitude = CAST(ST_X(the_geom) AS NUMERIC(8,7)) FROM (select ST_Transform(st_setsrid(st_makepoint(locationx_ew, locationy_ns), 28992), 4326) AS the_geom from timingpoint as t2 where t2.timingpointcode = timingpointcode) AS W;   
 
