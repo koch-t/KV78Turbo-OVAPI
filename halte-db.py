@@ -9,11 +9,6 @@ import re
 COMMON_HEADERS = [('Content-Type', 'application/json'), ('Access-Control-Allow-Origin', '*'), ('Access-Control-Allow-Headers', 'Requested-With,Content-Type')]
 
 pool = PersistentConnectionPool(1,20,"dbname='haltes'")
-cl = SphinxClient()
-cl.SetServer('localhost', 9312)
-cl.SetWeights ( [100, 1] )
-cl.SetMatchMode ( SPH_MATCH_EXTENDED )
-cl.Open()
 
 #update timingpoint set latitude = CAST(ST_Y(the_geom) AS NUMERIC(9,7)), longitude = CAST(ST_X(the_geom) AS NUMERIC(8,7)) FROM (select ST_Transform(st_setsrid(st_makepoint(locationx_ew, locationy_ns), 28992), 4326) AS the_geom from timingpoint as t2 where t2.timingpointcode = timingpointcode) AS W;   
 
@@ -25,9 +20,15 @@ def searchStops(query):
     reply = {'Columns' : ['TimingPointTown','TimingPointName', 'Name', 'Latitude', 'Longitude'] , 'Rows' : []}
     if query == 'search_suggest_query' or query == None or query == '' or len(query) < 2:
        return reply
+    cl = SphinxClient()
+    cl.SetServer('localhost', 9312)
+    cl.SetWeights ( [100, 1] )
+    cl.SetMatchMode ( SPH_MATCH_EXTENDED )
+    cl.SetIndexWeights({'haltes' : 10,'haltesstemmed' : 1,'haltes_metaphone' : 5})
+    cl.SetFieldWeights({'name' : 20, 'timingpointtown' : 10, 'timingpointname' : 1, 'namespaceless' : 4, 'timingpointtownspaceless' : 2, 'timingpointnamespaceless' : 1,'stopareacode' :1})
     cl.Open()
-    res = cl.Query ( query, '*' )
     try:
+       res = cl.Query ( query, '*' )
        if res.has_key('matches'):
          for match in res['matches']:
                 row = {}
@@ -36,10 +37,10 @@ def searchStops(query):
 			value = match['attrs'][attrname]
 			row[attrname] = value
 		reply['Rows'].append([row['timingpointtown'],row['timingpointname'],row['name'],row['latitude'],row['longitude']])
-    except:
-        cl.Close()
-        cl.Open()
+    except Exception as e:
+	print e
 	pass
+    cl.Close()
     return reply
             
 	
@@ -65,7 +66,7 @@ def queryStops(conn,environ, start_response):
     elif 'bottomright' in params and 'topleft' in params:
     	    minLatitude, maxLongitude = params['bottomright'][0].split(',')
     	    maxLatitude, minLongitude = params['topleft'][0].split(',')
-    	    cur.execute("SELECT distinct on (timingpointtown,name) timingpointtown,name,latitude,longitude,stopareacode FROM timingpoint WHERE latitude > %s AND latitude < %s AND longitude > %s AND longitude < %s", [minLatitude,maxLatitude,minLongitude,maxLongitude])
+    	    cur.execute("SELECT distinct on (timingpointtown,name) timingpointtown,name,avg(latitude),avg(longitude),stopareacode FROM timingpoint WHERE latitude between %s AND %s AND longitude between %s and %s group by timingpointtown,name,stopareacode", [minLatitude,maxLatitude,minLongitude,maxLongitude])
     elif 'near' in params:
     	    latitude, longitude = params['near'][0].split(',')
     	    limit = '100'
@@ -89,7 +90,7 @@ def queryStops(conn,environ, start_response):
 
 def queryStopAreas(conn,environ, start_response):
     params = parse_qs(environ.get('QUERY_STRING',''))
-    reply = {'Columns' : ['TimingPointTown', 'Name', 'Latitude', 'Longitude', 'StopAreaCode'] , 'Rows' : []}
+    reply = {'Columns' : ['TimingPointTown','TimingPointName','Name', 'Latitude', 'Longitude', 'StopAreaCode'] , 'Rows' : []}
     cur = conn.cursor()
     if 'near' in params:
     	    latitude, longitude = params['near'][0].split(',')
@@ -99,12 +100,12 @@ def queryStopAreas(conn,environ, start_response):
 	    limit5 = int(limit)*5
     	    cur = conn.cursor()
             geomconstant = 'SRID=4326;POINT('+longitude+' '+latitude+')'
-    	    cur.execute("SELECT timingpointtown,name,latitude,longitude,stopareacode FROM (select distinct on (stopareacode) * from (select *, ST_Distance(the_geom, st_setsrid(st_makepoint(%s, %s),4326)) as distance from timingpoint ORDER by the_geom <-> %s::geometry LIMIT %s) as x) as y order by distance LIMIT %s;", [latitude,longitude,geomconstant,limit5,limit]) 
+    	    cur.execute("SELECT timingpointtown,timingpointname,name,latitude,longitude,stopareacode FROM (select distinct on (stopareacode) * from (select *, ST_Distance(the_geom, st_setsrid(st_makepoint(%s, %s),4326)) as distance from timingpoint ORDER by the_geom <-> %s::geometry LIMIT %s) as x) as y order by distance LIMIT %s;", [latitude,longitude,geomconstant,limit5,limit]) 
     else:
     	    return '404'
     rows = cur.fetchall()
     for row in rows:
-    	    reply['Rows'].append([row[0],row[1],row[2],row[3],row[4]])
+    	    reply['Rows'].append([row[0],row[1],row[2],row[3],row[4],row[5]])
     cur.close()
     return reply
 
@@ -168,21 +169,25 @@ def HalteDB(environ, start_response):
 	    url = url[:-1]
     arguments = url.split('/')
     reply = None
-    conn = pool.getconn()
-    if arguments[0] == 'towns':
-        reply = queryTowns(conn,environ, start_response)
-    elif arguments[0] == 'stops':
-    	reply = queryStops(conn,environ, start_response)
-    elif arguments[0] == 'stopareas':
-        reply = queryStopAreas(conn,environ, start_response)
-    elif arguments[0] == 'timingpoints':
-    	reply = queryTimingPoints(conn,environ, start_response)
-    elif arguments[0] == 'accessibility':
-    	reply = queryAccessibility(conn,environ, start_response)
-    else:
+    try:
+        conn = pool.getconn()
+        if arguments[0] == 'towns':
+            reply = queryTowns(conn,environ, start_response)
+        elif arguments[0] == 'stops':
+    	    reply = queryStops(conn,environ, start_response)
+        elif arguments[0] == 'stopareas':
+            reply = queryStopAreas(conn,environ, start_response)
+        elif arguments[0] == 'timingpoints':
+    	    reply = queryTimingPoints(conn,environ, start_response)
+        elif arguments[0] == 'accessibility':
+    	    reply = queryAccessibility(conn,environ, start_response)
+        else:
+            pool.putconn(conn)
+    	    return notfound(start_response)
         pool.putconn(conn)
-    	return notfound(start_response)
-    pool.putconn(conn)
+    except Exception as e:
+        print e
+	pool.putconn(conn,close=True)
     if reply == '404':
     	    return notfound(start_response)
     reply = simplejson.dumps(reply)
