@@ -39,17 +39,17 @@ for row in rows:
 cur.close()
 
 cur = conn.cursor()
-cur.execute("select timingpointcode,timingpointname,timingpointtown,stopareacode,CAST(ST_Y(the_geom) AS NUMERIC(9,7)) AS lat,CAST(ST_X(the_geom) AS NUMERIC(8,7)) AS lon,motorisch,visueel FROM (select distinct t.timingpointcode as timingpointcode,motorisch,visueel, t.timingpointname as timingpointname, t.timingpointtown as timingpointtown,t.stopareacode as stopareacode,ST_Transform(st_setsrid(st_makepoint(t.locationx_ew, t.locationy_ns), 28992), 4326) AS the_geom from timingpoint as t left join haltescan as h on (t.timingpointcode = h.timingpointcode) where not exists (select 1 from usertimingpoint,localservicegrouppasstime where t.timingpointcode = usertimingpoint.timingpointcode and journeystoptype = 'INFOPOINT' and usertimingpoint.dataownercode = localservicegrouppasstime.dataownercode and usertimingpoint.userstopcode = localservicegrouppasstime.userstopcode)) as W;",[])
+cur.execute("select timingpointcode,timingpointname,timingpointtown,stopareacode,CAST(ST_Y(the_geom) AS NUMERIC(9,7)) AS lat,CAST(ST_X(the_geom) AS NUMERIC(8,7)) AS lon,visualaccessible,wheelchairaccessible FROM (select distinct t.timingpointcode as timingpointcode,visualaccessible, t.timingpointname as timingpointname, t.timingpointtown as timingpointtown,t.stopareacode as stopareacode,ST_Transform(st_setsrid(st_makepoint(t.locationx_ew, t.locationy_ns), 28992), 4326) AS the_geom,wheelchairaccessible from timingpoint as t where not exists (select 1 from usertimingpoint,localservicegrouppasstime where t.timingpointcode = usertimingpoint.timingpointcode and journeystoptype = 'INFOPOINT' and usertimingpoint.dataownercode = localservicegrouppasstime.dataownercode and usertimingpoint.userstopcode = localservicegrouppasstime.userstopcode)) as W;",[])
 kv7rows = cur.fetchall()
 for kv7row in kv7rows:
     tpc_meta[intern(kv7row[0])] = {'TimingPointName' : intern(kv7row[1]), 'TimingPointTown' : intern(kv7row[2]), 'StopAreaCode' : kv7row[3], 'Latitude' : float(kv7row[4]), 'Longitude' : float(kv7row[5])}
-    if not (kv7row[6] == None and kv7row[7] == None):
-       tpc_meta[kv7row[0]]['TimingPointWheelChairAccessible'] = kv7row[6]
-       tpc_meta[kv7row[0]]['TimingPointVisualAccessible'] = kv7row[7]
-    if kv7row[2] == None:
-       del(tpc_meta[row['TimingPointCode']]['StopAreaCode'])
+    if kv7row[6] != 'UNKNOWN' and kv7row[6] is not None:
+        tpc_meta[kv7row[0]]['TimingPointVisualAccessible'] = kv7row[6]
+    if kv7row[7] != 'UNKNOWN' and kv7row[7] is not None:
+        tpc_meta[kv7row[0]]['TimingPointWheelChairAccessible'] = kv7row[7]
 cur.close()
 conn.close()
+print 'Loaded KV7 data'
 
 def totimestamp(operationdate, timestamp, row):
     hours, minutes, seconds = timestamp.split(':')   
@@ -75,7 +75,7 @@ def cleanup():
         for journey, row in values['Passes'].items():
             if now > row['ExpectedArrivalTime'] and now > row['ExpectedDepartureTime']:
                 del(tpc_store[timingpointcode]['Passes'][journey])
-                if row['TripStopStatus'] == 'PLANNED' or row['TripStopStatus'] == 'UNKNOWN':
+		if row['TripStopStatus'] in ['PLANNED','UNKNOWN','CANCEL']:
                     userstoporder = row['UserStopOrderNumber']
                     if journey in journey_store and userstoporder in journey_store[journey]['Stops']:
                     	line_id = row['DataOwnerCode'] + '_' + row['LinePlanningNumber'] + '_' + str(row['LineDirection'])
@@ -122,9 +122,11 @@ def storecurrect(newrow):
     id = '_'.join([newrow['DataOwnerCode'], str(newrow['LocalServiceLevelCode']), newrow['LinePlanningNumber'], str(newrow['JourneyNumber']), str(newrow['FortifyOrderNumber'])])
     if id in journey_store and int(newrow['UserStopOrderNumber']) in journey_store[id]['Stops']:
         row = journey_store[id]['Stops'][int(newrow['UserStopOrderNumber'])]
-        if row['TripStopStatus'] == 'CANCEL' and newrow['TripStopStatus'] == 'PLANNED':
-            newrow['TripStopStatus'] == 'CANCEL'
+        if row['TripStopStatus'] == 'LINESTOPCANCEL':
+            newrow['TripStopStatus'] = 'LINESTOPCANCEL'
         setDelayIncrease(row,newrow)
+	if newrow['WheelChairAccessible'] == 'UNKNOWN':
+	    newrow['WheelChairAccessible'] = row['WheelChairAccessible'] # Because of agencies not implementing the accessiblity tag in KV6, we're better off ignoring UKNOWNS unfortunately
         row.update(newrow)
     else:
         row = newrow
@@ -141,12 +143,9 @@ def storecurrect(newrow):
 	    else:
                 del(row[x])
         except:
-	    pass
+	    pass  
     row['IsTimingStop'] = (row['IsTimingStop'] == '1')
 
-    if row['WheelChairAccessible'] == 'ACCESSIBLE' and row['TimingPointCode'] in tpc_meta:
-        tpc_meta[row['TimingPointCode']]['TimingPointWheelChairAccessible'] = True
-    
     if row['TimingPointCode'] not in tpc_store:
     	    tpc_store[row['TimingPointCode']] = {'Passes' : {id: row}, 'GeneralMessages' : {}}
     else:
@@ -162,15 +161,7 @@ def storecurrect(newrow):
     
     if line_id not in line_store:
     	line_store[line_id] = {'Network': {}, 'Actuals': {}, 'Line' : {}}
-    	line_store[line_id]['Line'] = {'DataOwnerCode' : row['DataOwnerCode']}
-    	line_store[line_id]['Line']['LineDirection'] = row['LineDirection']
-    	line_store[line_id]['Line']['LinePlanningNumber'] = row['LinePlanningNumber']
-        if linemeta_id in line_meta:
-            line_store[line_id]['Line'].update(line_meta[linemeta_id])
-    
-    if destinationmeta_id in destination_meta:
-        line_store[line_id]['Line']['DestinationName50'] = destination_meta[destinationmeta_id]      
-    
+    	line_store[line_id]['Line'] = {'DataOwnerCode' : row['DataOwnerCode'], 'LineDirection' : row['LineDirection'], 'LinePlanningNumber' : row['LinePlanningNumber'], 'DestinationCode' : row['DestinationCode']}
     if row['JourneyPatternCode'] not in line_store[line_id]['Network']:
         line_store[line_id]['Network'][row['JourneyPatternCode']] = {}
     if row['UserStopOrderNumber'] not in line_store[line_id]['Network'][row['JourneyPatternCode']]:
@@ -179,10 +170,10 @@ def storecurrect(newrow):
             'IsTimingStop': row['IsTimingStop'],
             'UserStopOrderNumber':row['UserStopOrderNumber']
             }
-        if row['TimingPointCode'] in tpc_meta:
-            line_store[line_id]['Network'][row['JourneyPatternCode']][row['UserStopOrderNumber']].update(tpc_meta[row['TimingPointCode']]) 
     if id not in journey_store:
     	journey_store[id] = {'Stops' : {row['UserStopOrderNumber']: row}}
+        if row['WheelChairAccessible'] != 'UNKNOWN':
+            line_store[line_id]['Line']['LineWheelchairAccessible'] = row['WheelChairAccessible']
     else:
         journey_store[id]['Stops'][row['UserStopOrderNumber']] = row
 
@@ -200,20 +191,11 @@ def storecurrect(newrow):
     	previousStopOrder = int(row['UserStopOrderNumber']) - 1
     	if previousStopOrder in journey_store[id]['Stops'] and journey_store[id]['Stops'][previousStopOrder]['TripStopStatus'] == 'PASSED':
     	    line_store[line_id]['Actuals'][id] = row
-    elif row['TripStopStatus'] == 'PLANNED' and id not in line_store[line_id]['Actuals'] and int(row['UserStopOrderNumber']) == 1: #add planned journeys
+    elif row['TripStopStatus'] == 'PLANNED' and row['TimingPointDataOwnerCode'] == 'ALGEMEEN' and id not in line_store[line_id]['Actuals'] and int(row['UserStopOrderNumber']) == 1: #add planned journeys
     	line_store[line_id]['Actuals'][id] = row
     elif (row['TripStopStatus'] == 'UNKNOWN' or row['TripStopStatus'] == 'CANCEL') and id in line_store[line_id]['Actuals']: #Delete canceled or non live journeys
 	del(line_store[line_id]['Actuals'][id])
-    if 'SideCode' in row and row['SideCode'] == '-':
-	del(row['SideCode'])
-            
-def storeplanned(row):
-    if 'SideCode' in row and row['SideCode'] == '-':
-        del(row['SideCode'])
-    elif 'SideCode' in row:
-        row['SideCode'] = intern(row['SideCode'])
-    storecurrect(row)
-        	
+                   	
 def storemessage(row):
     id = '_'.join([row['DataOwnerCode'], row['MessageCodeDate'], row['MessageCodeNumber'], row['TimingPointDataOwnerCode'], row['TimingPointCode']])
     if row['TimingPointCode'] in tpc_store:
@@ -265,6 +247,8 @@ def addMeta(passtimes):
         result[key]['ExpectedArrivalTime'] = todate(result[key]['ExpectedArrivalTime'])
         result[key]['TargetDepartureTime'] = todate(result[key]['TargetDepartureTime'])
         result[key]['TargetArrivalTime'] = todate(result[key]['TargetArrivalTime'])
+        if result[key]['TripStopStatus'] == 'LINESTOPCANCEL':
+            result[key]['TripStopStatus'] = 'CANCEL'
         if 'LastUpdateTimeStamp' in values:
             result[key]['LastUpdateTimeStamp'] = todate(result[key]['LastUpdateTimeStamp'])
     return result
@@ -281,14 +265,15 @@ def queryTimingPoints(arguments):
             for tpc in set(arguments[1].split(',')):
                 if tpc in tpc_store and tpc != '':
                         reply[tpc] = tpc_store[tpc].copy()
-                        #reply[tpc]['ServerTime'] = strftime("%Y-%m-%dT%H:%M:%SZ",gmtime())
                         reply[tpc]['Passes'] = addMeta(reply[tpc]['Passes'])
                 if tpc in tpc_meta and tpc != '':
                     if tpc in reply:
                         reply[tpc]['Stop'] = tpc_meta[tpc]
+			reply[tpc]['Stop']['TimingPointCode'] = tpc
                     else:
     	    	        reply[tpc] = {'Stop' : tpc_meta[tpc], 'GeneralMessages' : {}, 'Passes' : {}}
     	    	        tpc_store[tpc] = {'Stop' : tpc_meta[tpc], 'GeneralMessages' : {}, 'Passes' : {}}
+			reply[tpc]['Stop']['TimingPointCode'] = tpc
             return reply
 
 def queryJourneys(arguments):
@@ -313,7 +298,11 @@ def queryStopAreas(arguments):
         for stopareacode, values in stopareacode_store.items():
             for tpc, tpcvalues in stopareacode_store[stopareacode].items():
                 if tpc in tpc_meta:
-                    reply[stopareacode] = tpc_meta[tpc]
+                    reply[stopareacode] = tpc_meta[tpc].copy()
+		    if 'TimingPointWheelChairAccessible' in reply[stopareacode]:
+		        del(reply[stopareacode]['TimingPointWheelChairAccessible'])
+		    if 'TimingPointVisualAccessible' in reply[stopareacode]:
+		        del(reply[stopareacode]['TimingPointVisualAccessible'])
         return reply
     else:
         reply = {} 
@@ -339,6 +328,10 @@ def queryLines(arguments):
         for line, values in line_store.items():
             reply[line] = values['Line'].copy()
             linemeta_id = values['Line']['DataOwnerCode'] + '_' + values['Line']['LinePlanningNumber']
+            if 'DestinationCode' in values['Line']:
+                destination_id = values['Line']['DataOwnerCode']+'_'+values['Line']['DestinationCode']
+                if destination_id in destination_meta:
+                    reply[line]['DestinationName50'] = destination_meta[destination_id]
             if linemeta_id in line_meta:
                 reply[line].update(line_meta[linemeta_id])
         return reply
@@ -346,9 +339,20 @@ def queryLines(arguments):
         reply = {}
         for line in set(arguments[1].split(',')):
             if line in line_store and line != '':
-                reply[line] = line_store[line].copy()
+                reply[line] = deepcopy(line_store[line])
                 reply[line]['ServerTime'] = strftime("%Y-%m-%dT%H:%M:%SZ",gmtime())
                 reply[line]['Actuals'] = addMeta(reply[line]['Actuals'])
+                line_id = reply[line]['Line']['DataOwnerCode']+'_'+reply[line]['Line']['LinePlanningNumber']
+                if line_id in line_meta:
+                    reply[line]['Line'].update(line_meta[line_id])
+                if 'DestinationCode' in reply[line]['Line']:
+                    destination_id = reply[line]['Line']['DataOwnerCode']+'_'+reply[line]['Line']['DestinationCode']
+                    if destination_id in destination_meta:
+                        reply[line]['Line']['DestinationName50'] = destination_meta[destination_id]
+                for journeypatterncode,journeypattern in reply[line]['Network'].items():
+                    for userstoporder, timingpoint in journeypattern.items():
+                        if timingpoint['TimingPointCode'] in tpc_meta:
+                            timingpoint.update(tpc_meta[timingpoint['TimingPointCode']])
         return reply
 
 def recvPackage(content):
@@ -370,13 +374,15 @@ def recvPackage(content):
                 else:              
                     row[k] = v
             if row['TripStopStatus'] == 'CANCEL':
-                print 'XCANCEL'+ row['LastUpdateTimeStamp'] + '  ' + row['ExpectedArrivalTime']
+                print line
             for x in ['ReasonType', 'AdviceType', 'AdviceContent','SubAdviceType','MessageType','ReasonContent','OperatorCode', 'SubReasonType', 'MessageContent']:
                 if x in row and row[x] is None:
                     del(row[x])
-            if row['JourneyPatternCode'] == '':
-                row['JourneyPatternCode'] = 0
             if type == 'DATEDPASSTIME':
+                if 'SideCode' in row and row['SideCode'] in ['-','Left','Right']:
+                    del(row['SideCode'])
+                elif 'SideCode' in row:
+                    row['SideCode'] = intern(row['SideCode'])
                 if row['TripStopStatus'] != 'UNKNOWN' and row['TripStopStatus'] != 'PLANNED': #Keeps status of the dataowners supplying us data
                     last_updatestore['DataOwner'][row['DataOwnerCode']] = row['LastUpdateTimeStamp']
                     last_updatestore['Subscription'][subscription] = row['LastUpdateTimeStamp']
@@ -389,24 +395,37 @@ def recvPackage(content):
             elif type == 'GENERALMESSAGEUPDATE':
                 print 'GENERAL MESSAGE UPDATE'
                 storemessage(row)
+		print content
             elif type == 'GENERALMESSAGEDELETE':
                 print 'GENERAL MESSAGE DELETE'
                 deletemessage(row)
+		print content
             else:
                 print 'UNKNOWN TYPE : !!!!!' +  type
+                print content
 
 while True:
     socks = dict(poller.poll())
-    
     if socks.get(kv8) == zmq.POLLIN:
         multipart = kv8.recv_multipart()
         content = GzipFile('','r',0,StringIO(''.join(multipart[1:]))).read()
         recvPackage(content)
     elif socks.get(kv7) == zmq.POLLIN:
     	data = kv7.recv_json()
-        for pass_id, row in data.items():
-        	storeplanned(row)
-
+        if 'PASSTIMES' in data:
+            for pass_id, row in data['PASSTIMES'].items():
+                id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), str(row['FortifyOrderNumber'])])
+                if id not in journey_store or int(row['UserStopOrderNumber']) not in journey_store[id]['Stops']:
+        	    storecurrect(row)
+        if 'DESTINATION' in data:
+            for dest_id, dest in data['DESTINATION'].items():
+                destination_meta[dest_id] = intern(dest)
+        if 'TIMINGPOINT' in data:
+            for tpc, timingpoint in data['TIMINGPOINT'].items():
+                tpc_meta[tpc] = timingpoint
+        if 'LINE' in data:
+            for line_id, line in data['LINE'].items():
+                line_meta[line_id] = line
     elif socks.get(client) == zmq.POLLIN:
         url = client.recv()
         arguments = url.split('/')
@@ -424,11 +443,9 @@ while True:
             client.send_json(reply)
         elif arguments[0] == 'lastupdate':
             reply = {'LastUpdateTimeStamps' : last_updatestore, 'ServerTime' : strftime("%Y-%m-%dT%H:%M:%SZ",gmtime())}
-            client.send_json(reply)
-            
+            client.send_json(reply)            
         elif arguments[0] == 'generalmessage':
             client.send_json(generalmessagestore)
-            
         else:
             client.send_json([])
 

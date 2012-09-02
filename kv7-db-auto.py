@@ -18,6 +18,7 @@ sys.stderr.write('Setting up a ZeroMQ PUSH: %s\n' % (ZMQ_KV7))
 context = zmq.Context()
 push = context.socket(zmq.PUSH)
 push.connect(ZMQ_KV7)
+variables = {}
 
 def secondsFromMidnight(time):
 	hours, minutes, seconds = time.split(':')
@@ -38,16 +39,58 @@ def time(seconds):
 #now = datetime.now() + timedelta(hours=1) - timedelta(seconds=120)
 now = datetime.now() + timedelta(minutes=90) - timedelta(seconds=120) 
 
+def broadcastmeta(dbname):
+    print 'Fetching meta'
+    conn = psycopg2.connect("dbname='"+dbname+"'")
+    cur = conn.cursor()
+    cur.execute("SELECT dataownercode,lineplanningnumber,linepublicnumber,linename,transporttype from line", [])
+    meta = {'LINE' : {}, 'DESTINATION' : {}, 'TIMINGPOINT' : {}}
+    rows = cur.fetchall()
+    for row in rows:
+        line_id = intern(row[0] + '_' + row[1])
+        meta['LINE'][line_id] = {'LinePublicNumber' : intern(row[2]), 'LineName' : intern(row[3]), 'TransportType' : intern(row[4])}
+    cur.close()
+
+    cur = conn.cursor()
+    cur.execute("SELECT dataownercode,destinationcode,destinationname50 from destination", [])
+    rows = cur.fetchall()
+    for row in rows:
+        destination_id = intern(row[0] + '_' + row[1])
+        meta['DESTINATION'][destination_id] = intern(row[2])
+    cur.close()
+
+    cur = conn.cursor()
+    cur.execute("select timingpointcode,timingpointname,timingpointtown,stopareacode,CAST(ST_Y(the_geom) AS NUMERIC(9,7)) AS lat,CAST(ST_X(the_geom) AS NUMERIC(8,7)) AS lon,visualaccessible,wheelchairaccessible FROM (select distinct t.timingpointcode as timingpointcode,visualaccessible,wheelchairaccessible, t.timingpointname as timingpointname, t.timingpointtown as timingpointtown,t.stopareacode as stopareacode,ST_Transform(st_setsrid(st_makepoint(t.locationx_ew, t.locationy_ns), 28992), 4326) AS the_geom from timingpoint as t where not exists (select 1 from usertimingpoint,localservicegrouppasstime where t.timingpointcode = usertimingpoint.timingpointcode and journeystoptype = 'INFOPOINT' and usertimingpoint.dataownercode = localservicegrouppasstime.dataownercode and usertimingpoint.userstopcode = localservicegrouppasstime.userstopcode)) as W;",[])
+    kv7rows = cur.fetchall()
+    for kv7row in kv7rows:
+        meta['TIMINGPOINT'][intern(kv7row[0])] = {'TimingPointName' : intern(kv7row[1]), 'TimingPointTown' : intern(kv7row[2]), 'StopAreaCode' : kv7row[3], 'Latitude' : float(kv7row[4]), 'Longitude' : float(kv7row[5])}
+        if kv7row[7] != 'UNKNOWN' and kv7row[7] is not None:
+            meta['TIMINGPOINT'][kv7row[0]]['TimingPointWheelChairAccessible'] = kv7row[7]
+        if kv7row[6] != 'UNKNOWN' and kv7row[6] is not None:
+            meta['TIMINGPOINT'][kv7row[0]]['TimingPointVisualAccessible'] = kv7row[6]
+    push.send_json(meta)
+    cur.close()
+    conn.close()
+    print 'meta refreshed'
+
 def currentdatabase():
         output = codecs.open('/var/ovapi/kv7.openov.nl/GOVI/CURRENTDB', 'r', 'UTF-8')
-        x = output.read()
-        return x.split('\n')[0]
+        newdb = output.read().split('\n')[0]
+        if 'lastdb' not in variables or variables['lastdb'] != newdb:
+            broadcastmeta(newdb)
+        variables['lastdb'] = newdb
+        return newdb
 
 def fetchandpushkv7():
+    try:
+        fetchandpush()
+    except Exception as e:
+        print e
+
+def fetchandpush():
         dbname = currentdatabase()
         print 'Using database : ' + dbname
         conn = psycopg2.connect("dbname='"+dbname+"'")
-	passes = {}
 	global now # this has to be done better
 	now += timedelta(seconds=60)
 	startrange = now.strftime("%H:%M:00")
@@ -74,7 +117,7 @@ select
 p.dataownercode,p.localservicelevelcode,p.lineplanningnumber,journeynumber,fortifyordernumber,p.userstopcode,userstopordernumber,linedirection, 
        
 p.destinationcode,targetarrivaltime,targetdeparturetime,sidecode,wheelchairaccessible,journeystoptype,istimingstop,productformulatype,timingpointcode,
-       timingpointdataownercode,operationdate 
+       timingpointdataownercode,operationdate ,journeypatterncode
 from localservicegrouppasstime as p, usertimingpoint as u, localservicegroupvalidity as v 
 where exists (
               SELECT 1 
@@ -96,7 +139,7 @@ where exists (
             )
 """, [startdate, startrange,endrange,startdate48,startrange48,endrange48,startdate,startrange,startrange48,startdate48,startrange48])
         kv7rows = cur.fetchall()
-        passes = {}
+        passes = {'PASSTIMES' : {} }
         updatetimestamp = datetime.today().strftime("%Y-%m-%dT%H:%M:%S") + "+02:00"
 	print str(len(kv7rows)) + ' rows from db'
 	for kv7row in kv7rows:
@@ -119,18 +162,24 @@ where exists (
                     del(row['SideCode'])
 		row['WheelChairAccessible'] = kv7row[12]
 		row['JourneyStopType'] = kv7row[13]
-		row['IsTimingStop'] = kv7row[14]
+                if not kv7row[14]:
+		    row['IsTimingStop'] = 0
+                else:
+		    row['IsTimingStop'] = 1
 		row['ProductFormulaType'] = kv7row[15]
 		row['TimingPointCode'] = kv7row[16]
+		row['TimingPointDataOwnerCode'] = kv7row[17]
 		row['OperationDate'] = kv7row[18].strftime("%Y-%m-%d")
-                row['JourneyPatternCode'] = 0
+                row['JourneyPatternCode'] = kv7row[19]
+                if row['JourneyPatternCode'] == None:
+                    row['JourneyPatternCode'] = 0
 		row['TripStopStatus'] = 'PLANNED'
                 row['LastUpdateTimeStamp'] = updatetimestamp
 		pass_id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), str(row['FortifyOrderNumber']), row['UserStopCode'], str(row['UserStopOrderNumber'])])
-		passes[pass_id] = row
+		passes['PASSTIMES'][pass_id] = row
 		if (len(passes) > 50):
 			push.send_json(passes)
-			passes = {}
+			passes = {'PASSTIMES' : {} }
         cur.close()
         conn.close()
 	push.send_json(passes)
