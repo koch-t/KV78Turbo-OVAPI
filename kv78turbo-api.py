@@ -9,7 +9,7 @@ from cStringIO import StringIO
 import psycopg2
 from copy import deepcopy
 
-conn = psycopg2.connect("dbname='kv78turbo1'")
+conn = psycopg2.connect("dbname='kv78turbo'")
 
 tpc_store = {}
 stopareacode_store = {}
@@ -155,9 +155,9 @@ def storecurrect(newrow):
         stopareacode = tpc_meta[row['TimingPointCode']]['StopAreaCode']
         if stopareacode != None:
     	    if stopareacode not in stopareacode_store:
-    	    	    stopareacode_store[stopareacode] = { row['TimingPointCode'] : True}
+    	    	    stopareacode_store[stopareacode] = [row['TimingPointCode']]
     	    elif row['TimingPointCode'] not in stopareacode_store[stopareacode]:
-    	    	    stopareacode_store[stopareacode][row['TimingPointCode']] = True
+    	    	    stopareacode_store[stopareacode].append(row['TimingPointCode'])
     
     if line_id not in line_store:
     	line_store[line_id] = {'Network': {}, 'Actuals': {}, 'Line' : {}}
@@ -295,8 +295,8 @@ def queryJourneys(arguments):
 def queryStopAreas(arguments):
     if len(arguments) == 1:
         reply = {}
-        for stopareacode, values in stopareacode_store.items():
-            for tpc, tpcvalues in stopareacode_store[stopareacode].items():
+        for stopareacode in stopareacode_store:
+            for tpc in stopareacode_store[stopareacode]:
                 if tpc in tpc_meta:
                     reply[stopareacode] = tpc_meta[tpc].copy()
 		    if 'TimingPointWheelChairAccessible' in reply[stopareacode]:
@@ -308,9 +308,9 @@ def queryStopAreas(arguments):
         reply = {} 
         for stopareacode in set(arguments[1].split(',')):
             if stopareacode in stopareacode_store and stopareacode != '':
-                reply[stopareacode] = deepcopy(stopareacode_store[stopareacode])
+                reply[stopareacode] = {}
                 reply[stopareacode]['ServerTime'] = strftime("%Y-%m-%dT%H:%M:%SZ",gmtime())
-                for tpc, tpcvalues in reply[stopareacode].items():
+                for tpc in stopareacode_store[stopareacode]:
                     if tpc in tpc_store and tpc != '':
                         reply[stopareacode][tpc] = tpc_store[tpc].copy()
                         reply[stopareacode][tpc]['Passes'] = addMeta(reply[stopareacode][tpc]['Passes'])
