@@ -28,7 +28,7 @@ def searchStops(query):
     cl.SetFieldWeights({'name' : 20, 'timingpointtown' : 10, 'timingpointname' : 1, 'namespaceless' : 4, 'timingpointtownspaceless' : 2, 'timingpointnamespaceless' : 1,'stopareacode' :1})
     cl.Open()
     try:
-       res = cl.Query ( query, '*' )
+       res = cl.Query ( query, 'haltes haltesstemmed haltes_metaphone' )
        if res.has_key('matches'):
          for match in res['matches']:
                 row = {}
@@ -42,18 +42,63 @@ def searchStops(query):
 	pass
     cl.Close()
     return reply
-            
-	
-def queryTowns(conn,environ, start_response):
-    reply = {'Columns' : ['TimingPointTown'], 'Rows' : []}
-    conn = pool.getconn()
-    cur = conn.cursor()
-    cur.execute("SELECT distinct timingpointtown FROM timingpoint ORDER BY timingpointtown", [])
-    rows = cur.fetchall()
-    for row in rows:
-    	    reply['Rows'].append([row[0]])
-    cur.close()
+
+def search(conn,environ, start_response):
+    params = parse_qs(environ.get('QUERY_STRING',''))
+    reply = {'Columns' : ['TimingPointTown','TimingPointName', 'Name', 'Latitude','Longitude'], 'Rows' : []}
+    params = parse_qs(environ.get('QUERY_STRING',''))
+    query = params['query'][0]
+    if query == 'search_suggest_query' or query == None or query == '' or len(query) < 2:
+       return reply
+    cl = SphinxClient()
+    cl.SetServer('localhost', 9312)
+    cl.SetWeights ( [100, 1] )
+    if 'sgh' in params:
+        cl.SetFilter('sgh',[1])
+    cl.SetMatchMode ( SPH_MATCH_EXTENDED )
+    cl.SetIndexWeights({'haltes' : 10,'haltesstemmed' : 1,'haltes_metaphone' : 5})
+    cl.SetFieldWeights({'name' : 20, 'timingpointtown' : 10, 'timingpointname' : 1, 'namespaceless' : 4, 'timingpointtownspaceless' : 2, 'timingpointnamespaceless' : 1,'stopareacode' :1})
+    cl.Open()
+    try:
+       res = cl.Query ( query, 'haltes haltesstemmed haltes_metaphone' )
+       if res.has_key('matches'):
+         for match in res['matches']:
+                row = {}
+                for attr in res['attrs']:
+                        attrname = attr[0]
+                        value = match['attrs'][attrname]
+                        row[attrname] = value
+                reply['Rows'].append([row['timingpointtown'],row['timingpointname'],row['name'],row['latitude'],row['longitude']])
+    except Exception as e:
+        print e
+        pass
+    cl.Close()
     return reply
+
+
+townreply = {'Columns' : ['TimingPointTown'], 'Rows' : []}
+conn = pool.getconn()
+cur = conn.cursor()
+cur.execute("SELECT distinct timingpointtown FROM timingpoint ORDER BY timingpointtown", [])
+rows = cur.fetchall()
+for row in rows:
+    townreply['Rows'].append([row[0]])
+cur.close()
+pool.putconn(conn)
+
+def queryTowns(conn,environ, start_response):
+    params = parse_qs(environ.get('QUERY_STRING',''))
+    if 'sgh' in params:
+        reply = {'Columns' : ['TimingPointTown'], 'Rows' : []}
+        cur = conn.cursor()
+        cur.execute("SELECT distinct timingpointtown FROM timingpoint where sgh = true ORDER BY timingpointtown", [])
+        rows = cur.fetchall()
+        for row in rows:
+    	    reply['Rows'].append([row[0]])
+        cur.close()
+        return reply
+    else:
+        return townreply
 
 def queryStops(conn,environ, start_response):
     params = parse_qs(environ.get('QUERY_STRING',''))
@@ -63,10 +108,22 @@ def queryStops(conn,environ, start_response):
        	    cur.execute("SELECT distinct on (timingpointtown,name) timingpointtown,name,latitude,longitude,stopareacode FROM timingpoint WHERE timingpointtown = %s ORDER BY name", [params['town'][0]])
     elif 'tpc' in params:
     	    cur.execute("SELECT distinct on (timingpointtown,name) timingpointtown,name,latitude,longitude,stopareacode FROM timingpoint WHERE timingpointcode = %s ORDER BY name", [params['tpc'][0]])
+    elif 'bottomright' in params and 'topleft' in params and 'sgh' in params:
+            minLatitude, maxLongitude = params['bottomright'][0].split(',')
+            maxLatitude, minLongitude = params['topleft'][0].split(',')
+            cur.execute("SELECT distinct on (timingpointtown,name) timingpointtown,name,avg(latitude),avg(longitude),stopareacode FROM timingpoint WHERE latitude between %s AND %s AND longitude between %s and %s and sgh = true group by timingpointtown,name,stopareacode", [minLatitude,maxLatitude,minLongitude,maxLongitude])
     elif 'bottomright' in params and 'topleft' in params:
     	    minLatitude, maxLongitude = params['bottomright'][0].split(',')
     	    maxLatitude, minLongitude = params['topleft'][0].split(',')
     	    cur.execute("SELECT distinct on (timingpointtown,name) timingpointtown,name,avg(latitude),avg(longitude),stopareacode FROM timingpoint WHERE latitude between %s AND %s AND longitude between %s and %s group by timingpointtown,name,stopareacode", [minLatitude,maxLatitude,minLongitude,maxLongitude])
+    elif 'near' in params and 'sgh' in params:
+            latitude, longitude = params['near'][0].split(',')
+            limit = '100'
+            if 'limit' in params:
+                limit = params['limit'][0]
+            cur = conn.cursor()
+            geomconstant = 'SRID=4326;POINT('+longitude+' '+latitude+')'
+            cur.execute("SELECT timingpointtown,name,latitude,longitude,stopareacode FROM (SELECT distinct on (timingpointtown,name) timingpointtown,name,latitude,longitude,stopareacode,distance FROM (select timingpointtown,name,latitude,longitude,stopareacode, ST_Distance(the_geom, st_setsrid(st_makepoint(%s, %s),4326)) as distance from timingpoint where sgh = true ORDER by the_geom <-> %s::geometry LIMIT %s) as x) as y order by distance;", [longitude,latitude,geomconstant,limit])
     elif 'near' in params:
     	    latitude, longitude = params['near'][0].split(',')
     	    limit = '100'
@@ -131,7 +188,7 @@ def queryTimingPoints(conn,environ, start_response):
        	    cur.execute("SELECT timingpointtown,timingpointname,name,timingpointcode,stopareacode, kv55, kv78turbo, arriva55 FROM timingpoint WHERE timingpointtown = %s AND timingpoointname = %s", [params['town'][0], params['timingpointname'][0]])
     elif 'town' in params and 'name' in params:
        	    cur.execute("SELECT timingpointtown,timingpointname,name,timingpointcode,stopareacode, kv55, kv78turbo, arriva55 FROM timingpoint WHERE timingpointtown = %s AND name = %s", [params['town'][0], params['name'][0]])
-    elif 'timingpointtown' in params:
+    elif 'town' in params:
        	    cur.execute("SELECT timingpointtown,timingpointname,name,timingpointcode,stopareacode, kv55, kv78turbo, arriva55 FROM timingpoint WHERE timingpointtown = %s", [params['town'][0]])
     elif 'tpc' in params:
        	    cur.execute("SELECT timingpointtown,timingpointname,name,timingpointcode,stopareacode, kv55, kv78turbo, arriva55 FROM timingpoint AS t1 WHERE EXISTS (select 1 FROM timingpoint AS t2 WHERE timingpointcode = %s and t1.name = t2.name AND t1.timingpointtown = t2.timingpointtown)", [params['tpc'][0]])
@@ -181,6 +238,8 @@ def HalteDB(environ, start_response):
     	    reply = queryTimingPoints(conn,environ, start_response)
         elif arguments[0] == 'accessibility':
     	    reply = queryAccessibility(conn,environ, start_response)
+        elif arguments[0] == 'search':
+            reply = search(conn,environ, start_response)
         else:
             pool.putconn(conn)
     	    return notfound(start_response)
