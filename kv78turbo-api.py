@@ -8,8 +8,11 @@ from gzip import GzipFile
 from cStringIO import StringIO
 import psycopg2
 from copy import deepcopy
+import codecs
 
-conn = psycopg2.connect("dbname='kv78turbo'")
+output = codecs.open('/var/ovapi/kv7.openov.nl/GOVI/CURRENTDB', 'r', 'UTF-8')
+dbname = output.read().split('\n')[0]
+conn = psycopg2.connect("dbname='%s'" % (dbname))
 
 tpc_store = {}
 stopareacode_store = {}
@@ -48,6 +51,31 @@ for kv7row in kv7rows:
     if kv7row[7] != 'UNKNOWN' and kv7row[7] is not None:
         tpc_meta[kv7row[0]]['TimingPointWheelChairAccessible'] = kv7row[7]
 cur.close()
+
+cur = conn.cursor()
+cur.execute("""
+SELECT DISTINCT on (p.dataownercode,p.lineplanningnumber,p.linedirection)
+p.dataownercode,p.lineplanningnumber,p.linedirection,p.destinationcode
+FROM (
+	SELECT distinct on (dataownercode,lineplanningnumber,linedirection)
+	dataownercode,lineplanningnumber,linedirection,journeypatterncode from localservicegrouppasstime
+	WHERE journeystoptype = 'LAST' 
+	ORDER BY dataownercode,lineplanningnumber,linedirection,userstopordernumber DESC) as ljp,localservicegrouppasstime as p
+WHERE
+p.dataownercode = ljp.dataownercode AND 
+p.lineplanningnumber = ljp.lineplanningnumber AND
+p.linedirection = ljp.linedirection AND
+p.journeypatterncode = ljp.journeypatterncode AND
+p.journeystoptype = 'FIRST'
+""")
+kv7rows = cur.fetchall()
+for kv7row in kv7rows:
+    line_id = '_'.join([kv7row[0],kv7row[1],str(kv7row[2])])
+    line_store[line_id] = {'Network': {}, 'Actuals': {}, 'Line' : {}}
+    line_store[line_id]['Line'] = {'DataOwnerCode' : kv7row[0], 'LineDirection' : kv7row[2], 'LinePlanningNumber' : kv7row[1], 'DestinationCode' : kv7row[3]}
+if 'ARR_16001_1' in line_store:
+    line_store['ARR_16001_1']['Line']['DestinationCode'] = '3000'
+cur.close()
 conn.close()
 print 'Loaded KV7 data'
 
@@ -70,7 +98,7 @@ def todate(timestamp):
     return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%dT%H:%M:%S")
 
 def cleanup():
-    now = long((datetime.today() - timedelta(seconds=90)).strftime("%s"))
+    now = long((datetime.today() - timedelta(seconds=60)).strftime("%s"))
     for timingpointcode, values in tpc_store.items():
         for journey, row in values['Passes'].items():
             if now > row['ExpectedArrivalTime'] and now > row['ExpectedDepartureTime']:
@@ -93,6 +121,11 @@ def cleanup():
     	        del(line_store[line_id]['Actuals'][journey_id])
     	    if journey_id in journey_store:
     	        del(journey_store[journey_id])
+    for id,row in generalmessagestore.items():
+        if 'MessageEndTime' in row and now > row['MessageEndTime']:
+            if row['TimingPointCode'] in tpc_store and id in tpc_store[row['TimingPointCode']]['GeneralMessages']:
+                del(tpc_store[row['TimingPointCode']]['GeneralMessages'][id])
+            del(generalmessagestore[id])	
 
 def setDelayIncrease(oldrow,newrow):
     if newrow['TripStopStatus'] == 'DRIVING' and oldrow['TripStopStatus'] != 'PLANNED' and oldrow['JourneyStopType'] != 'LAST':
@@ -112,13 +145,9 @@ def storecurrect(newrow):
     newrow['ExpectedDepartureTime'] = totimestamp(newrow['OperationDate'], newrow['ExpectedDepartureTime'], newrow)
     newrow['TargetArrivalTime'] = totimestamp(newrow['OperationDate'], newrow['TargetArrivalTime'], newrow)
     newrow['TargetDepartureTime'] = totimestamp(newrow['OperationDate'], newrow['TargetDepartureTime'], newrow)
-    if 'LastUpdateTimeStamp' in newrow:
-        date,time = newrow['LastUpdateTimeStamp'].split('T')
-        try: 
-            newrow['LastUpdateTimeStamp'] = totimestamp(date,time[:-6],None)
-        except:
-            print newrow['LastUpdateTimeStamp']
-            pass
+    date,time = newrow['LastUpdateTimeStamp'].split('T')
+    newrow['LastUpdateTimeStamp'] = totimestamp(date,time[:-6],None)
+
     id = '_'.join([newrow['DataOwnerCode'], str(newrow['LocalServiceLevelCode']), newrow['LinePlanningNumber'], str(newrow['JourneyNumber']), str(newrow['FortifyOrderNumber'])])
     if id in journey_store and int(newrow['UserStopOrderNumber']) in journey_store[id]['Stops']:
         row = journey_store[id]['Stops'][int(newrow['UserStopOrderNumber'])]
@@ -198,6 +227,11 @@ def storecurrect(newrow):
                    	
 def storemessage(row):
     id = '_'.join([row['DataOwnerCode'], row['MessageCodeDate'], row['MessageCodeNumber'], row['TimingPointDataOwnerCode'], row['TimingPointCode']])
+    if 'MessageEndTime' is None or int(row['MessageEndTime'][0:4]) < 1900:
+        return
+    row['MessageEndTime'] = int(datetime.strptime(row['MessageEndTime'][:-6],"%Y-%m-%dT%H:%M:%S").strftime("%s"))
+    row['MessageStartTime'] = int(datetime.strptime(row['MessageStartTime'][:-6],"%Y-%m-%dT%H:%M:%S").strftime("%s"))
+    row['MessageTimeStamp'] = int(datetime.strptime(row['MessageTimeStamp'][:-6],"%Y-%m-%dT%H:%M:%S").strftime("%s"))
     if row['TimingPointCode'] in tpc_store:
         tpc_store[row['TimingPointCode']]['GeneralMessages'][id] = row
     else:
@@ -230,9 +264,10 @@ poller.register(kv7, zmq.POLLIN)
 
 garbage = 0
 
-def addMeta(passtimes):
+def addMeta(passtimes,terminating):
     result = {}
     for key, values in passtimes.items():
+      if values['JourneyStopType'] != 'LAST' or terminating:
         result[key] = values.copy()
         linemeta_id = values['DataOwnerCode'] + '_' + values['LinePlanningNumber']
         if linemeta_id in line_meta:
@@ -265,7 +300,17 @@ def queryTimingPoints(arguments):
             for tpc in set(arguments[1].split(',')):
                 if tpc in tpc_store and tpc != '':
                         reply[tpc] = tpc_store[tpc].copy()
-                        reply[tpc]['Passes'] = addMeta(reply[tpc]['Passes'])
+                        now = long((datetime.today()).strftime("%s"))
+                        reply[tpc]['GeneralMessages'] = deepcopy(tpc_store[tpc]['GeneralMessages'])
+                        for key,value in reply[tpc]['GeneralMessages'].items():
+                            if value['MessageStartTime'] > now:
+                                del(reply[tpc]['GeneralMessages'][key])
+                            else:
+                                if 'MessageEndTime' in value:
+                                    value['MessageEndTime'] = todate(value['MessageEndTime'])
+                                value['MessageStartTime'] = todate(value['MessageStartTime'])
+                                value['MessageTimeStamp'] = todate(value['MessageTimeStamp'])
+                        reply[tpc]['Passes'] = addMeta(reply[tpc]['Passes'],(arguments[-1] != 'departures'))
                 if tpc in tpc_meta and tpc != '':
                     if tpc in reply:
                         reply[tpc]['Stop'] = tpc_meta[tpc]
@@ -289,7 +334,7 @@ def queryJourneys(arguments):
                 if journey != '':
                     reply[journey] = journey_store[journey].copy()
                     reply[journey]['ServerTime'] = strftime("%Y-%m-%dT%H:%M:%SZ",gmtime())
-                    reply[journey]['Stops'] = addMeta(reply[journey]['Stops'])
+                    reply[journey]['Stops'] = addMeta(reply[journey]['Stops'],True)
         return reply
 
 def queryStopAreas(arguments):
@@ -313,7 +358,17 @@ def queryStopAreas(arguments):
                 for tpc in stopareacode_store[stopareacode]:
                     if tpc in tpc_store and tpc != '':
                         reply[stopareacode][tpc] = tpc_store[tpc].copy()
-                        reply[stopareacode][tpc]['Passes'] = addMeta(reply[stopareacode][tpc]['Passes'])
+                        reply[stopareacode][tpc]['GeneralMessages'] = deepcopy(tpc_store[tpc]['GeneralMessages'])
+                        now = long((datetime.today()).strftime("%s"))
+                        for key,value in reply[stopareacode][tpc]['GeneralMessages'].items():
+                            if value['MessageStartTime'] > now:
+                                del(reply[stopareacode][tpc]['GeneralMessages'][key])
+                            else:
+                                if 'MessageEndTime' in value:
+                                    value['MessageEndTime'] = todate(value['MessageEndTime'])
+                                value['MessageStartTime'] = todate(value['MessageStartTime'])
+                                value['MessageTimeStamp'] = todate(value['MessageTimeStamp'])
+                        reply[stopareacode][tpc]['Passes'] = addMeta(reply[stopareacode][tpc]['Passes'],(arguments[-1] != 'departures'))
                         if tpc in tpc_meta:
                             if tpc in reply:
                                 reply[stopareacode][tpc]['Stop'] = tpc_meta[tpc]
@@ -341,7 +396,7 @@ def queryLines(arguments):
             if line in line_store and line != '':
                 reply[line] = deepcopy(line_store[line])
                 reply[line]['ServerTime'] = strftime("%Y-%m-%dT%H:%M:%SZ",gmtime())
-                reply[line]['Actuals'] = addMeta(reply[line]['Actuals'])
+                reply[line]['Actuals'] = addMeta(reply[line]['Actuals'],True)
                 line_id = reply[line]['Line']['DataOwnerCode']+'_'+reply[line]['Line']['LinePlanningNumber']
                 if line_id in line_meta:
                     reply[line]['Line'].update(line_meta[line_id])
@@ -373,8 +428,6 @@ def recvPackage(content):
                     row[k] = None
                 else:              
                     row[k] = v
-            if row['TripStopStatus'] == 'CANCEL':
-                print line
             for x in ['ReasonType', 'AdviceType', 'AdviceContent','SubAdviceType','MessageType','ReasonContent','OperatorCode', 'SubReasonType', 'MessageContent']:
                 if x in row and row[x] is None:
                     del(row[x])
@@ -403,6 +456,12 @@ def recvPackage(content):
             else:
                 print 'UNKNOWN TYPE : !!!!!' +  type
                 print content
+
+try:
+    output = codecs.open('msg', 'r', 'UTF-8')
+    recvPackage(output.read())
+except:
+    pass
 
 while True:
     socks = dict(poller.poll())
@@ -449,7 +508,7 @@ while True:
         else:
             client.send_json([])
 
-    if garbage > 120:
+    if garbage > 500:
         cleanup()
         garbage = 0
     else:
