@@ -381,6 +381,7 @@ def queryLines(arguments):
     if len(arguments) == 1:
         reply = {}
         for line, values in line_store.items():
+          if len(values['Network']) > 0:
             reply[line] = values['Line'].copy()
             linemeta_id = values['Line']['DataOwnerCode'] + '_' + values['Line']['LinePlanningNumber']
             if 'DestinationCode' in values['Line']:
