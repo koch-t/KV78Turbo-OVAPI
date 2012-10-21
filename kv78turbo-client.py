@@ -19,14 +19,29 @@ def KV78Client(environ, start_response):
         url = url[:-1]
    
     arguments = url.split('/')
-    if arguments[0] not in set(['tpc','journey', 'line','linesgh', 'stopareacode', 'lastupdate', 'generalmessage']) or len(arguments) > 3:
+    if arguments[0] not in set(['tpc','journey','line','linesgh','stopareacode','lastupdate','generalmessage','line2']) or len(arguments) > 3:
          return notfound(start_response)
    
     context = zmq.Context()
     client = context.socket(zmq.REQ)
     client.connect(ZMQ_KV78UWSGI)
-    if arguments[0] == 'linesgh':
-        if 'sgh' not in lines or (lines['sghtime'] < (time.time() - 1000)):
+    if arguments[0] == 'line2':
+        if 'data2' not in lines or lines['time2'] < (time.time() - 1000):
+            client.send('line')
+            data = {}
+            for line_id,line in client.recv_json().items():
+                if 'DestinationName50' in line:
+                    del(line['DestinationName50'])
+                if 'LineDirection' in line:
+                    del(line['LineDirection'])
+                if 'DestinationCode' in line:
+                    del(line['DestinationCode'])
+                data[line_id[:-2]] = line
+            lines['data2'] = simplejson.dumps(data)
+            lines['time2'] = time.time()
+        reply = lines['data2']
+    elif arguments[0] == 'linesgh':
+        if 'sgh' not in lines or lines['sghtime'] < time.time() - 1000:
             client.send('line')
             data  = client.recv_json()
 	    sghlines = {}
@@ -45,10 +60,11 @@ def KV78Client(environ, start_response):
  	    lines['sghtime'] = time.time()
         reply = lines['sgh']
     elif len(arguments) == 1 and arguments[0] == 'line':
-        if 'data' not in lines or (lines['time'] < (time.time() - 1000)):
+        if 'data' not in lines or lines['time'] < (time.time() - 1000):
 	    client.send(url)
 	    lines['data'] = client.recv()
 	    lines['time'] = time.time()
+            print 'Line cache miss'
 	reply = lines['data']
     elif (len(arguments) == 1 and arguments[0] == 'stopareacode'):
         if 'data' not in stopareas or stopareas['time'] < time.time() - 1000:
