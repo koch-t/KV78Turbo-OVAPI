@@ -9,6 +9,7 @@ from cStringIO import StringIO
 import psycopg2
 from copy import deepcopy
 import codecs
+from threading import Thread
 
 output = codecs.open('/var/ovapi/kv7.openov.nl/GOVI/CURRENTDB', 'r', 'UTF-8')
 dbname = output.read().split('\n')[0]
@@ -247,9 +248,6 @@ def deletemessage(row):
         
 context = zmq.Context()
 
-client = context.socket(zmq.REP)
-client.bind(ZMQ_KV78UWSGI)
-
 kv8 = context.socket(zmq.SUB)
 kv8.connect(ZMQ_KV8)
 kv8.setsockopt(zmq.SUBSCRIBE, "/GOVI/KV8")
@@ -258,7 +256,6 @@ kv7 = context.socket(zmq.PULL)
 kv7.bind(ZMQ_KV7)
 
 poller = zmq.Poller()
-poller.register(client, zmq.POLLIN)
 poller.register(kv8, zmq.POLLIN)
 poller.register(kv7, zmq.POLLIN)
 
@@ -464,29 +461,19 @@ try:
 except:
     pass
 
-while True:
-    socks = dict(poller.poll())
-    if socks.get(kv8) == zmq.POLLIN:
-        multipart = kv8.recv_multipart()
-        content = GzipFile('','r',0,StringIO(''.join(multipart[1:]))).read()
-        recvPackage(content)
-    elif socks.get(kv7) == zmq.POLLIN:
-    	data = kv7.recv_json()
-        if 'PASSTIMES' in data:
-            for pass_id, row in data['PASSTIMES'].items():
-                id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), str(row['FortifyOrderNumber'])])
-                if id not in journey_store or int(row['UserStopOrderNumber']) not in journey_store[id]['Stops']:
-        	    storecurrect(row)
-        if 'DESTINATION' in data:
-            for dest_id, dest in data['DESTINATION'].items():
-                destination_meta[dest_id] = intern(dest)
-        if 'TIMINGPOINT' in data:
-            for tpc, timingpoint in data['TIMINGPOINT'].items():
-                tpc_meta[tpc] = timingpoint
-        if 'LINE' in data:
-            for line_id, line in data['LINE'].items():
-                line_meta[line_id] = line
-    elif socks.get(client) == zmq.POLLIN:
+try:
+    output = codecs.open('msg78', 'r', 'UTF-8')
+    recvPackage(output.read())
+except:
+    pass
+
+class read(Thread):
+   def __init__ (self):
+      Thread.__init__(self)
+   def run(self):
+      client = context.socket(zmq.REP)
+      client.bind(ZMQ_KV78UWSGI)
+      while True:
         url = client.recv()
         arguments = url.split('/')
         if arguments[0] == 'tpc':
@@ -509,7 +496,32 @@ while True:
         else:
             client.send_json([])
 
-    if garbage > 500:
+thread = read()
+thread.start()
+
+while True:
+    socks = dict(poller.poll())
+    if socks.get(kv8) == zmq.POLLIN:
+        multipart = kv8.recv_multipart()
+        content = GzipFile('','r',0,StringIO(''.join(multipart[1:]))).read()
+        recvPackage(content)
+    elif socks.get(kv7) == zmq.POLLIN:
+    	data = kv7.recv_json()
+        if 'PASSTIMES' in data:
+            for pass_id, row in data['PASSTIMES'].items():
+                id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), str(row['FortifyOrderNumber'])])
+                if id not in journey_store or int(row['UserStopOrderNumber']) not in journey_store[id]['Stops']:
+        	    storecurrect(row)
+        if 'DESTINATION' in data:
+            for dest_id, dest in data['DESTINATION'].items():
+                destination_meta[dest_id] = intern(dest)
+        if 'TIMINGPOINT' in data:
+            for tpc, timingpoint in data['TIMINGPOINT'].items():
+                tpc_meta[tpc] = timingpoint
+        if 'LINE' in data:
+            for line_id, line in data['LINE'].items():
+                line_meta[line_id] = line
+    if garbage > 200:
         cleanup()
         garbage = 0
     else:
