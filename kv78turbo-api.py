@@ -514,7 +514,7 @@ while True:
         	    storecurrect(row)
         if 'DESTINATION' in data:
             for dest_id, dest in data['DESTINATION'].items():
-                destination_meta[dest_id] = intern(dest)
+                destination_meta[dest_id] = dest
         if 'TIMINGPOINT' in data:
             for tpc, timingpoint in data['TIMINGPOINT'].items():
                 tpc_meta[tpc] = timingpoint
