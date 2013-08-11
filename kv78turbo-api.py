@@ -480,27 +480,34 @@ class read(Thread):
       client = context.socket(zmq.REP)
       client.bind(ZMQ_KV78UWSGI)
       while True:
-        url = client.recv()
-        arguments = url.split('/')
-        if arguments[0] == 'tpc':
-            reply = queryTimingPoints(arguments)
-            client.send_json(reply)               
-        elif arguments[0] == 'journey':
-            reply = queryJourneys(arguments)
-            client.send_json(reply)
-        elif arguments[0] == 'stopareacode':
-            reply = queryStopAreas(arguments)
-            client.send_json(reply)
-        elif arguments[0] == 'line':
-            reply = queryLines(arguments)
-            client.send_json(reply)
-        elif arguments[0] == 'lastupdate':
-            reply = {'LastUpdateTimeStamps' : last_updatestore, 'ServerTime' : strftime("%Y-%m-%dT%H:%M:%SZ",gmtime())}
-            client.send_json(reply)            
-        elif arguments[0] == 'generalmessage':
-            client.send_json(generalmessagestore)
-        else:
-            client.send_json([])
+          try:
+              arguments = url.split('/')
+              if arguments[0] == 'tpc':
+                  reply = queryTimingPoints(arguments)
+                  client.send_json(reply)               
+              elif arguments[0] == 'journey':
+                  reply = queryJourneys(arguments)
+                  client.send_json(reply)
+              elif arguments[0] == 'stopareacode':
+                  reply = queryStopAreas(arguments)
+                  client.send_json(reply)
+              elif arguments[0] == 'line':
+                  reply = queryLines(arguments,no_network=(arguments[-1] == 'actuals'))
+                  client.send_json(reply)
+              elif arguments[0] == 'lastupdate':
+                  reply = {'LastUpdateTimeStamps' : last_updatestore, 'ServerTime' : strftime("%Y-%m-%dT%H:%M:%SZ",gmtime())}
+                  client.send_json(reply)            
+              elif arguments[0] == 'generalmessage':
+                  client.send_json(generalmessagestore)
+              elif arguments[0] == 'admin':
+                  client.send_json(['YO'])                
+              else:
+                  client.send_json([])
+          except Exception as e:
+              client.send_json([])
+              print e
+      Thread.__init__(self)
+
 
 thread = read()
 thread.start()
