@@ -461,18 +461,6 @@ def recvPackage(content):
                 print 'UNKNOWN TYPE : !!!!!' +  type
                 print content
 
-try:
-    output = codecs.open('msg', 'r', 'UTF-8')
-    recvPackage(output.read())
-except:
-    pass
-
-try:
-    output = codecs.open('msg78', 'r', 'UTF-8')
-    recvPackage(output.read())
-except:
-    pass
-
 class read(Thread):
    def __init__ (self):
       Thread.__init__(self)
