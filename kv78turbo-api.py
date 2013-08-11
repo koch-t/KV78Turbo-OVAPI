@@ -508,20 +508,44 @@ while True:
         recvPackage(content)
     elif socks.get(kv7) == zmq.POLLIN:
     	data = kv7.recv_json()
-        if 'PASSTIMES' in data:
-            for pass_id, row in data['PASSTIMES'].items():
-                id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), str(row['FortifyOrderNumber'])])
-                if id not in journey_store or int(row['UserStopOrderNumber']) not in journey_store[id]['Stops']:
-        	    storecurrect(row)
-        if 'DESTINATION' in data:
-            for dest_id, dest in data['DESTINATION'].items():
-                destination_meta[dest_id] = dest
-        if 'TIMINGPOINT' in data:
-            for tpc, timingpoint in data['TIMINGPOINT'].items():
-                tpc_meta[tpc] = timingpoint
-        if 'LINE' in data:
-            for line_id, line in data['LINE'].items():
-                line_meta[line_id] = line
+        try:
+            if 'PASSTIMES' in data:
+                for pass_id, row in data['PASSTIMES'].items():
+                    id = '_'.join([row['DataOwnerCode'], str(row['LocalServiceLevelCode']), row['LinePlanningNumber'], str(row['JourneyNumber']), str(row['FortifyOrderNumber'])])
+                    if id not in journey_store or int(row['UserStopOrderNumber']) not in journey_store[id]['Stops']:
+                        try:
+        	            storecurrect(row)
+                        except Exception as e:
+                            print e
+            if 'DESTINATION' in data:
+                for dest_id, dest in data['DESTINATION'].items():
+                    destination_meta[dest_id] = dest
+            if 'TIMINGPOINT' in data:
+                for tpc, timingpoint in data['TIMINGPOINT'].items():
+                    tpc_meta[tpc] = timingpoint
+            if 'LINE' in data:
+                for line_id, line in data['LINE'].items():
+                    line_meta[line_id] = line
+            if 'NETWORK' in data:
+                for line_id,network in data['NETWORK'].items():
+                    newnetwork = {}
+                    for jpcode,jp in network.items():
+                        if jpcode not in newnetwork:
+                            newnetwork[jpcode] = {}
+                    for stoporder,stop in jp.items():
+                        newnetwork[jpcode][int(stoporder)] = stop
+                if line_id not in line_store:
+                    line_store[line_id] = {'Network': {}, 'Actuals': {}, 'Line' : {}}
+                line_store[line_id]['Network'] = newnetwork  
+            if 'LINEMETA' in data:
+                for line_id, meta in data['LINEMETA'].items():
+                    if line_id in line_store:
+                        line_store[line_id]['Line']['DataOwnerCode'] = meta['DataOwnerCode']
+                        line_store[line_id]['Line']['LineDirection'] = meta['LineDirection']
+                        line_store[line_id]['Line']['LinePlanningNumber'] = meta['LinePlanningNumber']
+                        line_store[line_id]['Line']['DestinationCode'] = meta['DestinationCode']
+        except Exception as e:
+            print e
     if garbage > 200:
         cleanup()
         garbage = 0
