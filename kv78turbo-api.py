@@ -43,14 +43,20 @@ for row in rows:
 cur.close()
 
 cur = conn.cursor()
-cur.execute("select timingpointcode,timingpointname,timingpointtown,stopareacode,CAST(ST_Y(the_geom) AS NUMERIC(9,7)) AS lat,CAST(ST_X(the_geom) AS NUMERIC(8,7)) AS lon,visualaccessible,wheelchairaccessible FROM (select distinct t.timingpointcode as timingpointcode,visualaccessible, t.timingpointname as timingpointname, t.timingpointtown as timingpointtown,t.stopareacode as stopareacode,ST_Transform(st_setsrid(st_makepoint(coalesce(t.locationx_ew,0), coalesce(t.locationy_ns,0)), 28992), 4326) AS the_geom,wheelchairaccessible from timingpoint as t where not exists (select 1 from usertimingpoint,localservicegrouppasstime where t.timingpointcode = usertimingpoint.timingpointcode and journeystoptype = 'INFOPOINT' and usertimingpoint.dataownercode = localservicegrouppasstime.dataownercode and usertimingpoint.userstopcode = localservicegrouppasstime.userstopcode)) as W;",[])
+cur.execute("""
+SELECT timingpointcode,timingpointname,timingpointtown,stopareacode,ST_Y(the_geom)::NUMERIC(9,7) AS lat,ST_X(the_geom)::NUMERIC(8,7) AS lon
+FROM
+(SELECT DISTINCT dataownercode,userstopcode FROM localservicegrouppasstime WHERE journeystoptype != 'INFOPOINT') as u
+JOIN usertimingpoint as ut USING (dataownercode,userstopcode)
+JOIN (select *,ST_Transform(st_setsrid(st_makepoint(coalesce(locationx_ew,0), coalesce(locationy_ns,0)), 28992), 4326) AS the_geom FROM timingpoint) as t USING (timingpointcode)
+""",[])
 kv7rows = cur.fetchall()
 for kv7row in kv7rows:
     tpc_meta[intern(kv7row[0])] = {'TimingPointName' : intern(kv7row[1]), 'TimingPointTown' : intern(kv7row[2]), 'StopAreaCode' : kv7row[3], 'Latitude' : float(kv7row[4]), 'Longitude' : float(kv7row[5])}
-    if kv7row[6] != 'UNKNOWN' and kv7row[6] is not None:
-        tpc_meta[kv7row[0]]['TimingPointVisualAccessible'] = kv7row[6]
-    if kv7row[7] != 'UNKNOWN' and kv7row[7] is not None:
-        tpc_meta[kv7row[0]]['TimingPointWheelChairAccessible'] = kv7row[7]
+    #if kv7row[6] != 'UNKNOWN' and kv7row[6] is not None:
+    #    tpc_meta[kv7row[0]]['TimingPointVisualAccessible'] = kv7row[6]
+    #if kv7row[7] != 'UNKNOWN' and kv7row[7] is not None:
+    #    tpc_meta[kv7row[0]]['TimingPointWheelChairAccessible'] = kv7row[7]
 cur.close()
 
 cur = conn.cursor()
