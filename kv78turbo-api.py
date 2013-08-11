@@ -469,6 +469,7 @@ class read(Thread):
       client = context.socket(zmq.REP)
       client.bind(ZMQ_KV78UWSGI)
       while True:
+      	  url = client.recv()
           try:
               arguments = url.split('/')
               if arguments[0] == 'tpc':
