@@ -87,6 +87,17 @@ cur.close()
 conn.close()
 print 'Loaded KV7 data'
 
+try:
+    f = open('generalmessage.json','r')
+    generalmessagestore = ujson.load(f)
+    f.close()
+    for id,msg in generalmessagestore.items():
+        if msg['TimingPointCode'] not in tpc_store:
+            tpc_store[msg['TimingPointCode']] = {'Passes' : {}, 'GeneralMessages' : {}}
+        tpc_store[msg['TimingPointCode']]['GeneralMessages'][id] = msg
+except Exception as e:
+    print e
+
 def totimestamp(operationdate, timestamp, row):
     hours, minutes, seconds = timestamp.split(':')   
     years, months, days = operationdate.split('-')
@@ -233,6 +244,14 @@ def storecurrect(newrow):
     elif (row['TripStopStatus'] == 'UNKNOWN' or row['TripStopStatus'] == 'CANCEL') and id in line_store[line_id]['Actuals']: #Delete canceled or non live journeys
 	del(line_store[line_id]['Actuals'][id])
                    	
+def savemsgstore():
+    try:
+        f = open('generalmessage.json','w')
+        ujson.dump(generalmessagestore,f)
+        f.close()
+    except:
+        pass
+                   	
 def storemessage(row):
     id = '_'.join([row['DataOwnerCode'], row['MessageCodeDate'], row['MessageCodeNumber'], row['TimingPointDataOwnerCode'], row['TimingPointCode']])
     if 'MessageEndTime' is None or int(row['MessageEndTime'][0:4]) < 1900:
@@ -245,13 +264,16 @@ def storemessage(row):
     else:
         tpc_store[row['TimingPointCode']] = {'Passes' : {}, 'GeneralMessages' : {id : row}}
     generalmessagestore[id] = row
+    savemsgstore()
 
 def deletemessage(row):
-        id = '_'.join([row['DataOwnerCode'], row['MessageCodeDate'], row['MessageCodeNumber'], row['TimingPointDataOwnerCode'], row['TimingPointCode']])
-        if row['TimingPointCode'] in tpc_store and id in tpc_store[row['TimingPointCode']]['GeneralMessages']:
-        	del(tpc_store[row['TimingPointCode']]['GeneralMessages'][id])
-        if id in generalmessagestore:
-        	del(generalmessagestore[id])	
+    id = '_'.join([row['DataOwnerCode'], row['MessageCodeDate'], row['MessageCodeNumber'], row['TimingPointDataOwnerCode'], row['TimingPointCode']])
+    if row['TimingPointCode'] in tpc_store and id in tpc_store[row['TimingPointCode']]['GeneralMessages']:
+         del(tpc_store[row['TimingPointCode']]['GeneralMessages'][id])
+    if id in generalmessagestore:
+         del(generalmessagestore[id])	
+    savemsgstore()
+	
         
 context = zmq.Context()
 
