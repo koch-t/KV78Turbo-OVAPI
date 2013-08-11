@@ -381,7 +381,7 @@ def queryStopAreas(arguments):
     	    	            tpc_store[tpc] = {'Stop' : tpc_meta[tpc], 'GeneralMessages' : {}, 'Passes' : {}}
         return reply
    	
-def queryLines(arguments):
+def queryLines(arguments,no_network=False):
     if len(arguments) == 1:
         reply = {}
         for line, values in line_store.items():
@@ -399,6 +399,8 @@ def queryLines(arguments):
         reply = {}
         for line in set(arguments[1].split(',')):
             if line in line_store and line != '':
+                if len(line_store[line]['Network']) == 0:
+                    continue
                 reply[line] = deepcopy(line_store[line])
                 reply[line]['ServerTime'] = strftime("%Y-%m-%dT%H:%M:%SZ",gmtime())
                 reply[line]['Actuals'] = addMeta(reply[line]['Actuals'],True)
@@ -409,10 +411,13 @@ def queryLines(arguments):
                     destination_id = reply[line]['Line']['DataOwnerCode']+'_'+reply[line]['Line']['DestinationCode']
                     if destination_id in destination_meta:
                         reply[line]['Line']['DestinationName50'] = destination_meta[destination_id]
-                for journeypatterncode,journeypattern in reply[line]['Network'].items():
-                    for userstoporder, timingpoint in journeypattern.items():
-                        if timingpoint['TimingPointCode'] in tpc_meta:
-                            timingpoint.update(tpc_meta[timingpoint['TimingPointCode']])
+                if no_network:
+                    del(reply[line]['Network'])
+                else:
+                    for journeypatterncode,journeypattern in reply[line]['Network'].items():
+                        for userstoporder, timingpoint in journeypattern.items():
+                            if timingpoint['TimingPointCode'] in tpc_meta:
+                                timingpoint.update(tpc_meta[timingpoint['TimingPointCode']])
         return reply
 
 def recvPackage(content):
