@@ -26,6 +26,7 @@ tpc_meta = {}
 line_meta = {}
 destination_meta = {}
 
+print 'Start loading kv7 data'
 cur = conn.cursor()
 cur.execute("SELECT dataownercode,lineplanningnumber,linepublicnumber,linename,transporttype from line", [])
 rows = cur.fetchall()
