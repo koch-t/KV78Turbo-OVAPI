@@ -26,6 +26,8 @@ tpc_meta = {}
 line_meta = {}
 destination_meta = {}
 
+journeystoptypefiltered = False //Indicates whether journeystoptype was filtered during import KV7import 
+
 print 'Start loading kv7 data'
 cur = conn.cursor()
 cur.execute("SELECT dataownercode,lineplanningnumber,linepublicnumber,linename,transporttype from line", [])
@@ -44,7 +46,13 @@ for row in rows:
 cur.close()
 
 cur = conn.cursor()
-cur.execute("""
+if journeystoptypefiltered:
+    cur.execute("""
+SELECT timingpointcode,timingpointname,timingpointtown,stopareacode,ST_Y(the_geom)::NUMERIC(9,7) AS lat,ST_X(the_geom)::NUMERIC(8,7) AS lon
+FROM (select *,ST_Transform(st_setsrid(st_makepoint(coalesce(locationx_ew,0), coalesce(locationy_ns,0)), 28992), 4326) AS the_geom FROM timingpoint) as t
+""",[])
+else:
+    cur.execute("""
 SELECT timingpointcode,timingpointname,timingpointtown,stopareacode,ST_Y(the_geom)::NUMERIC(9,7) AS lat,ST_X(the_geom)::NUMERIC(8,7) AS lon
 FROM
 (SELECT DISTINCT dataownercode,userstopcode FROM localservicegrouppasstime WHERE journeystoptype != 'INFOPOINT') as u
