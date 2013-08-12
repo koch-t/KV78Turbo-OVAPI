@@ -26,7 +26,7 @@ tpc_meta = {}
 line_meta = {}
 destination_meta = {}
 
-journeystoptypefiltered = False //Indicates whether journeystoptype was filtered during import KV7import 
+journeystoptypefiltered = False #Indicates whether journeystoptype was filtered during import KV7import 
 
 print 'Start loading kv7 data'
 cur = conn.cursor()
