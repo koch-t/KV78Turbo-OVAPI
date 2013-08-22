@@ -20,6 +20,8 @@ push = context.socket(zmq.PUSH)
 push.connect(ZMQ_KV7)
 variables = {}
 
+MINUTES_FORWARD = 90
+
 def secondsFromMidnight(time):
 	hours, minutes, seconds = time.split(':')
 	return (int(hours)*60*60) + (int(minutes)*60) + int(seconds)
@@ -35,9 +37,7 @@ def time(seconds):
         seconds -= 60*minutes
         return "%02d:%02d:%02d" % (hours, minutes, seconds)
         
-#now = datetime.now() + timedelta(hours=2) - timedelta(seconds=120)
-#now = datetime.now() + timedelta(hours=1) - timedelta(seconds=120)
-now = datetime.now() + timedelta(minutes=90) - timedelta(seconds=120) 
+now = datetime.now() + timedelta(minutes=MINUTES_FORWARD) - timedelta(seconds=120) 
 
 def broadcastmeta(dbname):
     print 'Fetching meta'
@@ -101,12 +101,8 @@ def fetchandpush():
 	now += timedelta(seconds=60)
 	startrange = now.strftime("%H:%M:00")
 	startdate = now.strftime("%Y-%m-%d")
-	#endrange = (datetime.now() + timedelta(hours=2)).strftime("%H:%M:00")
-        #endrange = (datetime.now() + timedelta(hours=1)).strftime("%H:%M:00")
-        endrange = (datetime.now() + timedelta(minutes=90)).strftime("%H:%M:00")
-        #now = (datetime.now() + timedelta(hours=2) - timedelta(minutes=1))
-        #now = (datetime.now() + timedelta(hours=1) - timedelta(minutes=1))
-        now = (datetime.now() + timedelta(minutes=90) - timedelta(minutes=1))
+        endrange = (datetime.now() + timedelta(minutes=MINUTES_FORWARD)).strftime("%H:%M:00")
+        now = (datetime.now() + timedelta(minutes=MINUTES_FORWARD) - timedelta(minutes=1))
         startdate48 = ((now + timedelta(seconds=60))-timedelta(days=1)).strftime("%Y-%m-%d") 
 	if endrange == '00:00:00':
 		endrange = '24:00:00'
