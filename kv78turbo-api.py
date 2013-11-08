@@ -262,7 +262,7 @@ def savemsgstore():
                    	
 def storemessage(row):
     id = '_'.join([row['DataOwnerCode'], row['MessageCodeDate'], row['MessageCodeNumber'], row['TimingPointDataOwnerCode'], row['TimingPointCode']])
-    if 'MessageEndTime' is None or int(row['MessageEndTime'][0:4]) < 1900:
+    if row['MessageEndTime'] is None or int(row['MessageEndTime'][0:4]) < 1900:
         return
     row['MessageEndTime'] = int(datetime.strptime(row['MessageEndTime'][:-6],"%Y-%m-%dT%H:%M:%S").strftime("%s"))
     row['MessageStartTime'] = int(datetime.strptime(row['MessageStartTime'][:-6],"%Y-%m-%dT%H:%M:%S").strftime("%s"))
