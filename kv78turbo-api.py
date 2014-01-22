@@ -10,6 +10,7 @@ import psycopg2
 from copy import deepcopy
 import codecs
 from threading import Thread
+import simplejson as json
 
 output = codecs.open('/var/ovapi/kv7.openov.nl/GOVI/CURRENTDB', 'r', 'UTF-8')
 dbname = output.read().split('\n')[0]
@@ -97,7 +98,7 @@ print 'Loaded KV7 data'
 
 try:
     f = open('generalmessage.json','r')
-    generalmessagestore = ujson.load(f)
+    generalmessagestore = json.load(f)
     f.close()
     for id,msg in generalmessagestore.items():
         if msg['TimingPointCode'] not in tpc_store:
@@ -255,7 +256,7 @@ def storecurrect(newrow):
 def savemsgstore():
     try:
         f = open('generalmessage.json','w')
-        ujson.dump(generalmessagestore,f)
+        json.dump(generalmessagestore,f)
         f.close()
     except:
         pass
